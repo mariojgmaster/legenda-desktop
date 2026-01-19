@@ -1,0 +1,1 @@
+getFileUrl: (absPath: string) => Promise<{ ok: true; url: string } | { ok: false; message?: string }>;

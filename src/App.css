@@ -1,0 +1,11 @@
+@keyframes move {
+	0% {
+		transform: translateX(-20%);
+	}
+	50% {
+		transform: translateX(120%);
+	}
+	100% {
+		transform: translateX(120%);
+	}
+}
