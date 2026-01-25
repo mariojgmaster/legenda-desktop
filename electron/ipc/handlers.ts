@@ -28,6 +28,7 @@ import { sanitizeBaseName } from "../utils/sanitizeFileName";
 import { convertSrtFileToAss } from "../utils/srtToAss";
 import { parseSrt } from "../utils/srtParse";
 
+import { WhisperPaths } from "../infra/whisper/WhisperPaths";
 import { WhisperRunner } from "../infra/whisper/WhisperRunner";
 import type { WhisperLanguage, WhisperModel } from "../infra/whisper/types";
 
@@ -59,15 +60,20 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         return { ok: true, path: res.filePath };
     });
 
-    // MODELOS (mock por enquanto)
+    // MODELOS (real: lê do cache local em userData/models)
     ipcMain.handle(IPC.LIST_MODELS, async (): Promise<ListModelsResponse> => {
+        const dir = WhisperPaths.modelsDir();
+
+        const has = (id: "tiny" | "base" | "small" | "medium") =>
+            fs.existsSync(path.join(dir, `ggml-${id}.bin`));
+
         return {
             ok: true,
             items: [
-                { id: "tiny", displayName: "Tiny (muito rápido)", sizeMB: 75, installed: false },
-                { id: "base", displayName: "Base (rápido)", sizeMB: 142, installed: false },
-                { id: "small", displayName: "Small (recomendado)", sizeMB: 466, installed: false },
-                { id: "medium", displayName: "Medium (pesado)", sizeMB: 1530, installed: false }
+                { id: "tiny", displayName: "Tiny (muito rápido)", sizeMB: 75, installed: has("tiny") },
+                { id: "base", displayName: "Base (rápido)", sizeMB: 142, installed: has("base") },
+                { id: "small", displayName: "Small (recomendado)", sizeMB: 466, installed: has("small") },
+                { id: "medium", displayName: "Medium (pesado)", sizeMB: 1530, installed: has("medium") }
             ]
         };
     });
@@ -245,37 +251,35 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         return { ok: true };
     });
 
-    ipcMain.handle(
-        IPC.GET_FILE_URL,
-        async (_e, { absPath }: GetFileUrlRequestDTO): Promise<GetFileUrlResponseDTO> => {
-            try {
-                if (!absPath || typeof absPath !== "string") {
-                    return { ok: false, message: "Caminho inválido." };
-                }
-
-                // Segurança básica: precisa existir e ser arquivo
-                if (!fs.existsSync(absPath)) {
-                    return { ok: false, message: "Arquivo não encontrado." };
-                }
-
-                const st = fs.statSync(absPath);
-                if (!st.isFile()) {
-                    return { ok: false, message: "O caminho não é um arquivo." };
-                }
-
-                // (Opcional) validação por extensão para áudio
-                const ext = path.extname(absPath).toLowerCase();
-                const allowed = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
-                if (!allowed.has(ext)) {
-                    return { ok: false, message: "Formato de áudio não suportado." };
-                }
-
-                const encoded = Buffer.from(absPath, "utf8").toString("base64url");
-                return { ok: true, url: `appfile://audio?path=${encoded}` };
-            } catch (err: any) {
-                return { ok: false, message: err?.message || "Falha ao gerar URL." };
+    ipcMain.handle(IPC.GET_FILE_URL, async (_e, { absPath }: GetFileUrlRequestDTO): Promise<GetFileUrlResponseDTO> => {
+        try {
+            if (!absPath || typeof absPath !== "string") {
+                return { ok: false, message: "Caminho inválido." };
             }
+
+            // Segurança básica: precisa existir e ser arquivo
+            if (!fs.existsSync(absPath)) {
+                return { ok: false, message: "Arquivo não encontrado." };
+            }
+
+            const st = fs.statSync(absPath);
+            if (!st.isFile()) {
+                return { ok: false, message: "O caminho não é um arquivo." };
+            }
+
+            // (Opcional) validação por extensão para áudio
+            const ext = path.extname(absPath).toLowerCase();
+            const allowed = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
+            if (!allowed.has(ext)) {
+                return { ok: false, message: "Formato de áudio não suportado." };
+            }
+
+            const encoded = Buffer.from(absPath, "utf8").toString("base64url");
+            return { ok: true, url: `appfile://audio?path=${encoded}` };
+        } catch (err: any) {
+            return { ok: false, message: err?.message || "Falha ao gerar URL." };
         }
+    }
     );
 }
 
