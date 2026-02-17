@@ -59,8 +59,6 @@ export default function App() {
     const [generated, setGenerated] = useState<GeneratedFileDTO[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
 
-    const [menuOpenForId, setMenuOpenForId] = useState<string>("");
-
     const [granularity, setGranularity] = useState<GranularityPreset>("MEDIUM");
 
     const MENU_W = 200;
@@ -72,14 +70,6 @@ export default function App() {
     } | null>(null);
 
     const [audioUrl, setAudioUrl] = useState<string>("");
-
-    useEffect(() => {
-        function onDocClick() {
-            if (menuOpenForId) setMenuOpenForId("");
-        }
-        window.addEventListener("click", onDocClick);
-        return () => window.removeEventListener("click", onDocClick);
-    }, [menuOpenForId]);
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -563,38 +553,6 @@ export default function App() {
                                                 ⋯
                                             </button>
 
-                                            {menuOpenForId === g.id && (
-                                                <div style={styles.menu}>
-                                                    <button
-                                                        style={g.exists ? styles.menuItem : styles.menuItemDisabled}
-                                                        disabled={!g.exists}
-                                                        onClick={() => openFile(g.id)}
-                                                    >
-                                                        Abrir
-                                                    </button>
-
-                                                    <button style={styles.menuItem} onClick={() => showInFolder(g.id)}>
-                                                        Mostrar na pasta
-                                                    </button>
-
-                                                    <button
-                                                        style={g.exists ? styles.menuItem : styles.menuItemDisabled}
-                                                        disabled={!g.exists}
-                                                        onClick={() => openRenameModal(g.id)}
-                                                    >
-                                                        Renomear
-                                                    </button>
-
-                                                    <div style={styles.menuDivider} />
-
-                                                    <button
-                                                        style={styles.menuItem}
-                                                        onClick={() => (g.exists ? deleteItem(g.id) : removeFromHistoryOnly(g.id))}
-                                                    >
-                                                        {g.exists ? "Apagar do disco" : "Remover do histórico"}
-                                                    </button>
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>
