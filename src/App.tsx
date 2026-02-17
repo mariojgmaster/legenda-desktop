@@ -29,7 +29,7 @@ export default function App() {
     if (!window.api) {
         return (
             <div style={styles.page}>
-                <h1 style={{ margin: "4px 0 14px" }}>Legenda (MVP)</h1>
+                <h1 style={{ margin: "4px 0 14px" }}>Legenda Desktop</h1>
                 <div style={styles.card}>
                     <h2 style={styles.h2}>Inicializando integração…</h2>
                     <p style={{ marginTop: 8, color: "#555", lineHeight: 1.4 }}>
@@ -48,6 +48,7 @@ export default function App() {
     const [language, setLanguage] = useState<LanguageCode>("pt");
     const [modelId, setModelId] = useState<ModelId>("small");
     const [format, setFormat] = useState<SubtitleFormat>("srt");
+    const [assKaraoke, setAssKaraoke] = useState(false);
 
     const [outputPath, setOutputPath] = useState<string>("");
     const [busy, setBusy] = useState(false);
@@ -58,8 +59,6 @@ export default function App() {
     const [preview, setPreview] = useState<{ index: number; text: string }[]>([]);
     const [generated, setGenerated] = useState<GeneratedFileDTO[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
-
-    const [menuOpenForId, setMenuOpenForId] = useState<string>("");
 
     const [granularity, setGranularity] = useState<GranularityPreset>("MEDIUM");
 
@@ -72,14 +71,8 @@ export default function App() {
     } | null>(null);
 
     const [audioUrl, setAudioUrl] = useState<string>("");
-
-    useEffect(() => {
-        function onDocClick() {
-            if (menuOpenForId) setMenuOpenForId("");
-        }
-        window.addEventListener("click", onDocClick);
-        return () => window.removeEventListener("click", onDocClick);
-    }, [menuOpenForId]);
+    const [isMaximized, setIsMaximized] = useState(false);
+    const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -97,6 +90,7 @@ export default function App() {
 
     const canChooseOutput = !!audio && !busy;
     const canGenerate = !!audio && !!outputPath && !busy;
+    const isCompactLayout = viewportWidth < 1100;
 
     const disabledReason = useMemo(() => {
         if (busy) return "Processando...";
@@ -148,6 +142,12 @@ export default function App() {
     }, []);
 
     useEffect(() => {
+        const onResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
+
+    useEffect(() => {
         if (!menu) return;
 
         const close = () => setMenu(null);
@@ -196,20 +196,24 @@ export default function App() {
     }
 
     async function chooseOutput() {
-        if (!audio) return;
+        if (!audio) return null;
         const suggestedBaseName = baseNameFromFile(audio.name);
         const res = await window.api.chooseOutputPath({ suggestedBaseName, format });
-        if (!res.ok) return;
+        if (!res.ok) return null;
         setOutputPath(res.path);
+        return res.path;
     }
 
     async function start() {
         if (!audio) return;
 
-        // UX: se o usuário clicar gerar sem outputPath, abre o dialog ao invés de só desabilitar
-        if (!outputPath) {
-            await chooseOutput();
-            return;
+        let finalOutputPath = outputPath;
+
+        // UX: ao clicar gerar sem outputPath, escolhe destino e já inicia automaticamente
+        if (!finalOutputPath) {
+            const chosen = await chooseOutput();
+            if (!chosen) return;
+            finalOutputPath = chosen;
         }
 
         setBusy(true);
@@ -219,11 +223,12 @@ export default function App() {
 
         await window.api.startJob({
             audioPath: audio.path,
-            outputPath,
+            outputPath: finalOutputPath,
             language,
             modelId,
             format,
-            granularity
+            granularity,
+            assKaraoke
         });
     }
 
@@ -310,13 +315,48 @@ export default function App() {
         return idx;
     }, [step]);
 
+    async function handleMinimizeWindow() {
+        await window.api.windowMinimize();
+    }
+
+    async function handleToggleMaximizeWindow() {
+        const res = await window.api.windowMaximizeToggle();
+        if (res?.ok) setIsMaximized(res.maximized);
+    }
+
+    async function handleCloseWindow() {
+        await window.api.windowClose();
+    }
+
     return (
         <div style={styles.page}>
-            <h1 style={{ margin: "4px 0 14px" }}>Legenda (MVP)</h1>
+            <header className="window-topbar">
+                <div className="window-brand">
+                    <span className="window-dot" />
+                    <strong>Legenda Desktop</strong>
+                    <span className="window-subtitle">Transcrição profissional</span>
+                </div>
 
-            <div style={styles.grid2}>
+                <div className="window-controls no-drag">
+                    <button className="window-control-btn" onClick={handleMinimizeWindow} title="Minimizar" aria-label="Minimizar">
+                        —
+                    </button>
+                    <button className="window-control-btn" onClick={handleToggleMaximizeWindow} title="Maximizar" aria-label="Maximizar">
+                        {isMaximized ? "❐" : "□"}
+                    </button>
+                    <button className="window-control-btn close" onClick={handleCloseWindow} title="Fechar" aria-label="Fechar">
+                        ✕
+                    </button>
+                </div>
+            </header>
+
+            <main style={styles.contentWrap}>
+                <h1 style={styles.h1}>Legenda Desktop</h1>
+                <p style={styles.subheading}>Gere legendas com qualidade e fluxo otimizado em poucos cliques.</p>
+
+                <div style={styles.grid2}>
                 {/* Configuração */}
-                <div style={styles.card}>
+                <div style={styles.card} className="app-card">
                     <h2 style={styles.h2}>Configuração</h2>
 
                     <section style={styles.section}>
@@ -371,6 +411,22 @@ export default function App() {
                                 </div>
                             </div>
 
+
+                            {format === "ass" && (
+                                <div>
+                                    <div style={styles.mini}>Estilo ASS</div>
+                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "#444" }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={assKaraoke}
+                                            onChange={(e) => setAssKaraoke(e.target.checked)}
+                                            disabled={busy}
+                                        />
+                                        Aplicar estilo karaokê (realce progressivo por palavra)
+                                    </label>
+                                </div>
+                            )}
+
                             {audio && audioUrl && (
                                 <div>
                                     {/* <label className="text-sm opacity-80">Granularidade</label> */}
@@ -417,7 +473,7 @@ export default function App() {
                 </div>
 
                 {/* Execução */}
-                <div style={styles.card}>
+                <div style={styles.card} className="app-card">
                     <h2 style={styles.h2}>Execução</h2>
 
                     <section style={styles.section}>
@@ -490,8 +546,8 @@ export default function App() {
             </div>
 
             {/* Arquivos gerados */}
-            <div style={{ ...styles.card, marginTop: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+            <div style={{ ...styles.card, marginTop: 14 }} className="app-card">
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <h2 style={styles.h2}>Arquivos gerados</h2>
 
                     <input
@@ -502,7 +558,7 @@ export default function App() {
                             padding: "8px 10px",
                             borderRadius: 10,
                             border: "1px solid #ddd",
-                            width: 280
+                            width: "min(320px, 100%)"
                         }}
                     />
                 </div>
@@ -516,9 +572,9 @@ export default function App() {
                         Nenhum resultado para “{query}”.
                     </div>
                 ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 12, marginTop: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "minmax(280px, 420px) minmax(0, 1fr)", gap: 12, marginTop: 12 }}>
                         {/* Lista */}
-                        <div style={{ borderRight: "1px solid #eee", paddingRight: 12, maxHeight: 320, overflow: "auto" }}>
+                        <div style={{ borderRight: isCompactLayout ? "none" : "1px solid #eee", paddingRight: isCompactLayout ? 0 : 12, maxHeight: 320, overflow: "auto", minWidth: 0 }}>
                             {filtered.map((g) => (
                                 <div
                                     key={g.id}
@@ -563,38 +619,6 @@ export default function App() {
                                                 ⋯
                                             </button>
 
-                                            {menuOpenForId === g.id && (
-                                                <div style={styles.menu}>
-                                                    <button
-                                                        style={g.exists ? styles.menuItem : styles.menuItemDisabled}
-                                                        disabled={!g.exists}
-                                                        onClick={() => openFile(g.id)}
-                                                    >
-                                                        Abrir
-                                                    </button>
-
-                                                    <button style={styles.menuItem} onClick={() => showInFolder(g.id)}>
-                                                        Mostrar na pasta
-                                                    </button>
-
-                                                    <button
-                                                        style={g.exists ? styles.menuItem : styles.menuItemDisabled}
-                                                        disabled={!g.exists}
-                                                        onClick={() => openRenameModal(g.id)}
-                                                    >
-                                                        Renomear
-                                                    </button>
-
-                                                    <div style={styles.menuDivider} />
-
-                                                    <button
-                                                        style={styles.menuItem}
-                                                        onClick={() => (g.exists ? deleteItem(g.id) : removeFromHistoryOnly(g.id))}
-                                                    >
-                                                        {g.exists ? "Apagar do disco" : "Remover do histórico"}
-                                                    </button>
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>
@@ -602,7 +626,7 @@ export default function App() {
                         </div>
 
                         {/* Detalhe */}
-                        <div>
+                        <div style={{ minWidth: 0 }}>
                             {!selected ? (
                                 <div style={{ color: "#777", fontSize: 13 }}>Selecione um item para ver detalhes.</div>
                             ) : (
@@ -719,9 +743,9 @@ export default function App() {
             )}
 
             {/* Modal Renomear */}
-            {renameOpen && selected && (
-                <div style={styles.modalBackdrop} onMouseDown={() => setRenameOpen(false)}>
-                    <div style={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
+                {renameOpen && selected && (
+                    <div style={styles.modalBackdrop} onMouseDown={() => setRenameOpen(false)}>
+                        <div style={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
                         <h3 style={{ margin: 0 }}>Renomear arquivo</h3>
                         <div style={{ marginTop: 10, color: "#555", fontSize: 13 }}>
                             Nome atual: <b>{selected.fileName}</b>
@@ -750,34 +774,51 @@ export default function App() {
                             </button>
                         </div>
                     </div>
-                </div>
-            )}
+                    </div>
+                )}
+            </main>
         </div>
     );
 }
 
 const styles: Record<string, React.CSSProperties> = {
     page: {
-        fontFamily: "system-ui, Arial",
-        padding: 18,
-        maxWidth: 1200,
-        margin: "0 auto"
+        fontFamily: "Inter, system-ui, Arial",
+        padding: 0,
+        width: "100%",
+        minHeight: "100vh",
+        overflow: "hidden"
     },
+    contentWrap: {
+        background: "#f8fafc",
+        borderRadius: "0 0 14px 14px",
+        border: "1px solid rgba(226,232,240,0.8)",
+        borderTop: "none",
+        padding: 18,
+        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.26)",
+        minHeight: "calc(100vh - 48px)",
+        overflowY: "auto",
+        overflowX: "hidden"
+    },
+    h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "#0f172a" },
+    subheading: { margin: "8px 0 16px", fontSize: 13, color: "#475569" },
     grid2: {
         display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 14
+        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        gap: 16,
+        alignItems: "start"
     },
     card: {
-        border: "1px solid #e6e6e6",
+        border: "1px solid #d9e2f2",
         borderRadius: 14,
-        padding: 14,
-        background: "#fff"
+        padding: 16,
+        background: "#fff",
+        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)"
     },
-    h2: { margin: 0, fontSize: 16 },
+    h2: { margin: 0, fontSize: 16, color: "#0f172a" },
     section: { marginTop: 12 },
-    label: { fontWeight: 800, marginBottom: 6 },
-    mini: { fontSize: 12, color: "#666", marginBottom: 6 },
+    label: { fontWeight: 800, marginBottom: 6, color: "#1e293b" },
+    mini: { fontSize: 12, color: "#64748b", marginBottom: 6 },
     gridOptions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
     pillOn: {
         padding: "7px 10px",
@@ -795,9 +836,12 @@ const styles: Record<string, React.CSSProperties> = {
     },
     primaryBtn: {
         width: "100%",
-        padding: "10px 12px",
+        padding: "11px 12px",
         borderRadius: 10,
-        border: "1px solid #ddd",
+        border: "1px solid #0f3fb1",
+        background: "linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%)",
+        color: "#fff",
+        fontWeight: 700,
         cursor: "pointer"
     },
     indeterminateBar: {
@@ -810,7 +854,7 @@ const styles: Record<string, React.CSSProperties> = {
     modalBackdrop: {
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.25)",
+        background: "rgba(2,6,23,0.5)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -885,7 +929,7 @@ const styles: Record<string, React.CSSProperties> = {
     menuPanel: {
         position: "fixed",
         background: "#fff",
-        border: "1px solid #e6e6e6",
+        border: "1px solid #d9e2f2",
         borderRadius: 12,
         padding: 6,
         boxShadow: "0 12px 30px rgba(0,0,0,0.08)"
