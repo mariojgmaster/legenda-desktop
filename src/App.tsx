@@ -56,7 +56,7 @@ export default function App() {
     const [step, setStep] = useState<StepKey>("IDLE");
     const [message, setMessage] = useState<string>("");
 
-    const [preview, setPreview] = useState<{ index: number; text: string }[]>([]);
+    const [preview, setPreview] = useState<{ index: number; startMs: number; endMs: number; text: string }[]>([]);
     const [generated, setGenerated] = useState<GeneratedFileDTO[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
 
@@ -73,6 +73,8 @@ export default function App() {
     const [audioUrl, setAudioUrl] = useState<string>("");
     const [isMaximized, setIsMaximized] = useState(false);
     const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+    const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("legenda:dark") !== "0");
+    const [currentJobId, setCurrentJobId] = useState<string>("");
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -118,14 +120,16 @@ export default function App() {
 
         const off2 = window.api.onJobDone((e) => {
             setBusy(false);
+            setCurrentJobId("");
             setStep("DONE");
             setMessage("Concluído.");
-            setPreview(e.preview.map((p) => ({ index: p.index, text: p.text })));
+            setPreview(e.preview.map((p) => ({ index: p.index, startMs: p.startMs, endMs: p.endMs, text: p.text })));
             refreshGenerated(e.generated.id);
         });
 
         const off3 = window.api.onJobError((e) => {
             setBusy(false);
+            setCurrentJobId("");
             setStep("ERROR");
             setMessage(e.error.message || "Erro.");
         });
@@ -146,6 +150,10 @@ export default function App() {
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
     }, []);
+
+    useEffect(() => {
+        window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
+    }, [darkMode]);
 
     useEffect(() => {
         if (!menu) return;
@@ -221,7 +229,7 @@ export default function App() {
         setStep("PREPARING");
         setMessage("Iniciando...");
 
-        await window.api.startJob({
+        const started = await window.api.startJob({
             audioPath: audio.path,
             outputPath: finalOutputPath,
             language,
@@ -230,6 +238,7 @@ export default function App() {
             granularity,
             assKaraoke
         });
+        setCurrentJobId(started.jobId);
     }
 
     // Ações por item
@@ -328,8 +337,43 @@ export default function App() {
         await window.api.windowClose();
     }
 
+    async function cancelCurrentJob() {
+        if (!currentJobId) return;
+        await window.api.cancelJob({ jobId: currentJobId });
+        setBusy(false);
+        setCurrentJobId("");
+        setStep("IDLE");
+        setMessage("Processamento cancelado pelo usuário.");
+    }
+
+    function msToClock(ms: number) {
+        const total = Math.max(0, Math.floor(ms / 1000));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        return h > 0 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    async function copyPreviewLine(line: string) {
+        await navigator.clipboard.writeText(line);
+    }
+
+    async function copyPreviewAll() {
+        const lines = preview.map((p) => `[${msToClock(p.startMs)} - ${msToClock(p.endMs)}] ${p.text}`);
+        await navigator.clipboard.writeText(lines.join("\n"));
+    }
+
+    const progressPercent = useMemo(() => {
+        if (step === "DONE") return 100;
+        if (step === "SAVING") return 95;
+        if (step === "CONVERTING") return 82;
+        if (step === "TRANSCRIBING") return 58;
+        if (step === "PREPARING") return 18;
+        return 0;
+    }, [step]);
+
     return (
-        <div style={styles.page}>
+        <div style={styles.page} data-theme={darkMode ? "dark" : "light"}>
             <header className="window-topbar">
                 <div className="window-brand">
                     <span className="window-dot" />
@@ -338,6 +382,9 @@ export default function App() {
                 </div>
 
                 <div className="window-controls no-drag">
+                    <button className="theme-toggle-btn" onClick={() => setDarkMode((v) => !v)} title="Alternar tema" aria-label="Alternar tema">
+                        {darkMode ? "☀️" : "🌙"}
+                    </button>
                     <button className="window-control-btn" onClick={handleMinimizeWindow} title="Minimizar" aria-label="Minimizar">
                         —
                     </button>
@@ -359,6 +406,7 @@ export default function App() {
                 <div style={styles.card} className="app-card">
                     <h2 style={styles.h2}>Configuração</h2>
 
+                    <fieldset style={styles.fieldset} disabled={busy}>
                     <section style={styles.section}>
                         <div style={styles.label}>Arquivo de áudio</div>
                         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -435,6 +483,7 @@ export default function App() {
                                         value={granularity}
                                         onChange={(e) => setGranularity(e.target.value as GranularityPreset)}
                                         className="w-full rounded-lg border px-3 py-2"
+                                        disabled={busy}
                                     >
                                         <option value="LOW">Baixa (mais denso)</option>
                                         <option value="MEDIUM">Média (recomendado)</option>
@@ -453,8 +502,10 @@ export default function App() {
                             </div>
                         </div>
                     </section>
+                    </fieldset>
 
                     <section style={styles.section}>
+                        <div style={{ display: "flex", gap: 8 }}>
                         <button
                             onClick={start}
                             disabled={!audio || busy} // UX: permite clique mesmo sem outputPath (abre dialog)
@@ -463,6 +514,10 @@ export default function App() {
                         >
                             {busy ? "Gerando..." : "Gerar legenda"}
                         </button>
+                        <button onClick={cancelCurrentJob} disabled={!busy || !currentJobId} style={styles.secondaryBtn}>
+                            Cancelar
+                        </button>
+                        </div>
 
                         {!canGenerate && (
                             <div style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
@@ -520,26 +575,32 @@ export default function App() {
                                                 : ""}
                             </div>
 
-                            {busy && (
-                                <div style={{ marginTop: 10, height: 8, background: "#f1f1f1", borderRadius: 999, overflow: "hidden" }}>
-                                    <div style={styles.indeterminateBar} />
-                                </div>
-                            )}
+                            <div style={{ marginTop: 10, height: 10, background: "#e8edf7", borderRadius: 999, overflow: "hidden" }}>
+                                <div style={{ ...styles.progressBar, width: `${progressPercent}%` }} />
+                            </div>
+                            <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>{progressPercent}%</div>
                         </div>
                     </section>
 
                     <section style={styles.section}>
-                        <div style={styles.label}>Prévia</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <div style={styles.label}>Prévia</div>
+                            <button onClick={copyPreviewAll} disabled={preview.length === 0}>Copiar transcrição completa</button>
+                        </div>
                         {preview.length === 0 ? (
                             <div style={{ color: "#777", fontSize: 13 }}>A prévia aparece ao concluir.</div>
                         ) : (
-                            <ol style={{ margin: "8px 0 0 18px" }}>
+                            <div style={{ marginTop: 8, maxHeight: 260, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
                                 {preview.map((p) => (
-                                    <li key={p.index} style={{ marginBottom: 6 }}>
-                                        {p.text}
-                                    </li>
+                                    <div key={p.index} style={{ padding: 10, borderBottom: "1px solid #eef2f7", display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "150px 1fr auto", gap: 8, alignItems: "start" }}>
+                                        <div style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
+                                            {msToClock(p.startMs)} → {msToClock(p.endMs)}
+                                        </div>
+                                        <div style={{ fontSize: 13, lineHeight: 1.4 }}>{p.text}</div>
+                                        <button onClick={() => copyPreviewLine(p.text)} style={{ justifySelf: isCompactLayout ? "start" : "end" }}>Copiar trecho</button>
+                                    </div>
                                 ))}
-                            </ol>
+                            </div>
                         )}
                     </section>
                 </div>
@@ -844,12 +905,11 @@ const styles: Record<string, React.CSSProperties> = {
         fontWeight: 700,
         cursor: "pointer"
     },
-    indeterminateBar: {
-        width: "35%",
+    progressBar: {
         height: "100%",
-        background: "#d9d9d9",
+        background: "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)",
         borderRadius: 999,
-        animation: "move 1.1s infinite ease-in-out"
+        transition: "width 220ms ease"
     },
     modalBackdrop: {
         position: "fixed",

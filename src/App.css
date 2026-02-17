@@ -18,7 +18,7 @@ body {
 	font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
 	background: radial-gradient(circle at 10% 0%, #1f2b45 0%, #0f172a 30%, #0b1220 100%);
 	color: #111827;
-	overflow: hidden;
+	overflow: auto;
 }
 
 button,
@@ -102,7 +102,7 @@ select:focus {
 	opacity: 0.75;
 	white-space: nowrap;
 	text-overflow: ellipsis;
-	overflow: hidden;
+	overflow: auto;
 }
 
 .window-controls {
@@ -135,6 +135,40 @@ select:focus {
 .window-control-btn.close:hover:not(:disabled) {
 	background: #ef4444;
 	border-color: #ef4444;
+}
+
+
+.theme-toggle-btn {
+	height: 28px;
+	min-width: 42px;
+	padding: 0 10px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.12);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	color: #f8fafc;
+}
+
+.theme-toggle-btn:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.22);
+	box-shadow: none;
+	transform: none;
+}
+
+[data-theme="light"] .window-topbar {
+	background: linear-gradient(90deg, #eff6ff 0%, #dbeafe 100%);
+	color: #0f172a;
+}
+
+[data-theme="light"] .window-control-btn,
+[data-theme="light"] .theme-toggle-btn {
+	background: rgba(15, 23, 42, 0.04);
+	border-color: rgba(15, 23, 42, 0.14);
+	color: #0f172a;
+}
+
+[data-theme="light"] .window-dot {
+	background: #2563eb;
+	box-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
 }
 
 .app-card {
