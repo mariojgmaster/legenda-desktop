@@ -31,6 +31,8 @@ import { parseSrt } from "../utils/srtParse";
 import { WhisperRunner } from "../infra/whisper/WhisperRunner";
 import type { WhisperLanguage, WhisperModel } from "../infra/whisper/types";
 
+const ALLOWED_AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
+
 export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow) {
     const store = new GeneratedFilesStore(app.getPath("userData"));
     const runners = new Map<string, WhisperRunner>();
@@ -193,12 +195,11 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
             } else {
                 // gerar ass em temp e copiar pro output final
                 const tmpAss = res.srtPath.replace(/\.srt$/i, ".ass");
-                convertSrtFileToAss(res.srtPath, tmpAss);
+                convertSrtFileToAss(res.srtPath, tmpAss, { karaoke: Boolean(req.assKaraoke) });
                 fs.copyFileSync(tmpAss, req.outputPath);
             }
 
             emitJobProgress(win, { jobId, step: "CONVERTING", message: "Preparando legenda..." });
-            await sleep(50);
 
             emitJobProgress(win, { jobId, step: "SAVING", message: "Salvando arquivo..." });
 
@@ -267,8 +268,7 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
 
                 // (Opcional) validação por extensão para áudio
                 const ext = path.extname(absPath).toLowerCase();
-                const allowed = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
-                if (!allowed.has(ext)) {
+                if (!ALLOWED_AUDIO_EXTENSIONS.has(ext)) {
                     return { ok: false, message: "Formato de áudio não suportado." };
                 }
 
@@ -299,8 +299,4 @@ function resolveNonCollidingPath(p: string) {
         if (!fs.existsSync(candidate)) return candidate;
     }
     return p;
-}
-
-function sleep(ms: number) {
-    return new Promise((r) => setTimeout(r, ms));
 }

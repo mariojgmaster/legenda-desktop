@@ -48,6 +48,7 @@ export default function App() {
     const [language, setLanguage] = useState<LanguageCode>("pt");
     const [modelId, setModelId] = useState<ModelId>("small");
     const [format, setFormat] = useState<SubtitleFormat>("srt");
+    const [assKaraoke, setAssKaraoke] = useState(false);
 
     const [outputPath, setOutputPath] = useState<string>("");
     const [busy, setBusy] = useState(false);
@@ -58,8 +59,6 @@ export default function App() {
     const [preview, setPreview] = useState<{ index: number; text: string }[]>([]);
     const [generated, setGenerated] = useState<GeneratedFileDTO[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
-
-    const [menuOpenForId, setMenuOpenForId] = useState<string>("");
 
     const [granularity, setGranularity] = useState<GranularityPreset>("MEDIUM");
 
@@ -72,14 +71,6 @@ export default function App() {
     } | null>(null);
 
     const [audioUrl, setAudioUrl] = useState<string>("");
-
-    useEffect(() => {
-        function onDocClick() {
-            if (menuOpenForId) setMenuOpenForId("");
-        }
-        window.addEventListener("click", onDocClick);
-        return () => window.removeEventListener("click", onDocClick);
-    }, [menuOpenForId]);
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -196,20 +187,24 @@ export default function App() {
     }
 
     async function chooseOutput() {
-        if (!audio) return;
+        if (!audio) return null;
         const suggestedBaseName = baseNameFromFile(audio.name);
         const res = await window.api.chooseOutputPath({ suggestedBaseName, format });
-        if (!res.ok) return;
+        if (!res.ok) return null;
         setOutputPath(res.path);
+        return res.path;
     }
 
     async function start() {
         if (!audio) return;
 
-        // UX: se o usuário clicar gerar sem outputPath, abre o dialog ao invés de só desabilitar
-        if (!outputPath) {
-            await chooseOutput();
-            return;
+        let finalOutputPath = outputPath;
+
+        // UX: ao clicar gerar sem outputPath, escolhe destino e já inicia automaticamente
+        if (!finalOutputPath) {
+            const chosen = await chooseOutput();
+            if (!chosen) return;
+            finalOutputPath = chosen;
         }
 
         setBusy(true);
@@ -219,11 +214,12 @@ export default function App() {
 
         await window.api.startJob({
             audioPath: audio.path,
-            outputPath,
+            outputPath: finalOutputPath,
             language,
             modelId,
             format,
-            granularity
+            granularity,
+            assKaraoke
         });
     }
 
@@ -370,6 +366,22 @@ export default function App() {
                                     </button>
                                 </div>
                             </div>
+
+
+                            {format === "ass" && (
+                                <div>
+                                    <div style={styles.mini}>Estilo ASS</div>
+                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "#444" }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={assKaraoke}
+                                            onChange={(e) => setAssKaraoke(e.target.checked)}
+                                            disabled={busy}
+                                        />
+                                        Aplicar estilo karaokê (realce progressivo por palavra)
+                                    </label>
+                                </div>
+                            )}
 
                             {audio && audioUrl && (
                                 <div>
@@ -563,38 +575,6 @@ export default function App() {
                                                 ⋯
                                             </button>
 
-                                            {menuOpenForId === g.id && (
-                                                <div style={styles.menu}>
-                                                    <button
-                                                        style={g.exists ? styles.menuItem : styles.menuItemDisabled}
-                                                        disabled={!g.exists}
-                                                        onClick={() => openFile(g.id)}
-                                                    >
-                                                        Abrir
-                                                    </button>
-
-                                                    <button style={styles.menuItem} onClick={() => showInFolder(g.id)}>
-                                                        Mostrar na pasta
-                                                    </button>
-
-                                                    <button
-                                                        style={g.exists ? styles.menuItem : styles.menuItemDisabled}
-                                                        disabled={!g.exists}
-                                                        onClick={() => openRenameModal(g.id)}
-                                                    >
-                                                        Renomear
-                                                    </button>
-
-                                                    <div style={styles.menuDivider} />
-
-                                                    <button
-                                                        style={styles.menuItem}
-                                                        onClick={() => (g.exists ? deleteItem(g.id) : removeFromHistoryOnly(g.id))}
-                                                    >
-                                                        {g.exists ? "Apagar do disco" : "Remover do histórico"}
-                                                    </button>
-                                                </div>
-                                            )}
                                         </div>
                                     </div>
                                 </div>
