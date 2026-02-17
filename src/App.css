@@ -1,11 +1,211 @@
-@keyframes move {
-	0% {
-		transform: translateX(-20%);
+:root {
+	color-scheme: light;
+	--app-content-bg: #f8fafc;
+	--card-bg: #ffffff;
+	--card-border: #d9e2f2;
+	--text-primary: #0f172a;
+	--text-secondary: #475569;
+	--input-bg: #ffffff;
+	--input-border: #d5dceb;
+	--btn-secondary-bg: #ffffff;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+	width: 100%;
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+	background: radial-gradient(circle at 10% 0%, #1f2b45 0%, #0f172a 30%, #0b1220 100%);
+	color: var(--text-primary);
+	overflow: hidden;
+}
+
+button,
+select,
+input {
+	font: inherit;
+}
+
+button {
+	border: 1px solid var(--input-border);
+	background: var(--btn-secondary-bg);
+	color: var(--text-primary);
+	padding: 8px 12px;
+	border-radius: 10px;
+	cursor: pointer;
+	transition: all 0.16s ease;
+}
+
+button:hover:not(:disabled) {
+	border-color: #b9c4dd;
+	transform: translateY(-1px);
+	box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+
+button:active:not(:disabled) {
+	transform: translateY(0) scale(0.985);
+}
+
+button:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+select,
+input {
+	width: 100%;
+	padding: 9px 11px;
+	border-radius: 10px;
+	border: 1px solid var(--input-border);
+	background: var(--input-bg);
+	color: var(--text-primary);
+	transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+input:focus,
+select:focus {
+	outline: none;
+	border-color: #2563eb;
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.window-topbar {
+	height: 48px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 0 10px 0 14px;
+	background: linear-gradient(90deg, #111a30 0%, #1c2745 70%, #263257 100%);
+	color: #e8ecf6;
+	-webkit-app-region: drag;
+	user-select: none;
+}
+
+.window-brand {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 13px;
+	min-width: 0;
+}
+
+.window-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: 999px;
+	background: #7dd3fc;
+	box-shadow: 0 0 12px rgba(125, 211, 252, 0.8);
+}
+
+.window-subtitle {
+	font-size: 12px;
+	opacity: 0.75;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+.window-controls {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.no-drag {
+	-webkit-app-region: no-drag;
+}
+
+.window-control-btn,
+.theme-toggle-btn {
+	height: 28px;
+	border-radius: 8px;
+	background: rgba(255, 255, 255, 0.12);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	color: #f8fafc;
+}
+
+.window-control-btn {
+	width: 32px;
+	padding: 0;
+}
+
+.theme-toggle-btn {
+	min-width: 42px;
+	padding: 0 10px;
+}
+
+.window-control-btn:hover:not(:disabled),
+.theme-toggle-btn:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.22);
+	box-shadow: none;
+	transform: none;
+}
+
+.window-control-btn.close:hover:not(:disabled) {
+	background: #ef4444;
+	border-color: #ef4444;
+}
+
+[data-theme="dark"] {
+	--app-content-bg: #0f172a;
+	--card-bg: #111827;
+	--card-border: #334155;
+	--text-primary: #e2e8f0;
+	--text-secondary: #94a3b8;
+	--input-bg: #0b1220;
+	--input-border: #334155;
+	--btn-secondary-bg: #0b1220;
+}
+
+[data-theme="light"] .window-topbar {
+	background: linear-gradient(90deg, #eff6ff 0%, #dbeafe 100%);
+	color: #0f172a;
+}
+
+[data-theme="light"] .window-control-btn,
+[data-theme="light"] .theme-toggle-btn {
+	background: rgba(15, 23, 42, 0.04);
+	border-color: rgba(15, 23, 42, 0.14);
+	color: #0f172a;
+}
+
+[data-theme="light"] .window-dot {
+	background: #2563eb;
+	box-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
+}
+
+.app-card {
+	animation: fadeUp 260ms ease both;
+	transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.app-card:hover {
+	transform: translateY(-1px);
+	box-shadow: 0 12px 26px rgba(15, 23, 42, 0.09);
+}
+
+@keyframes fadeUp {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
 	}
-	50% {
-		transform: translateX(120%);
+	to {
+		opacity: 1;
+		transform: translateY(0);
 	}
-	100% {
-		transform: translateX(120%);
+}
+
+@media (max-width: 900px) {
+	.window-subtitle {
+		display: none;
 	}
 }
