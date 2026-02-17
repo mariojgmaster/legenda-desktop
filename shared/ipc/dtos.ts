@@ -37,6 +37,7 @@ export type StartJobRequest = {
     format: SubtitleFormat;
     outputPath: string;
     granularity?: GranularityPreset;
+    assKaraoke?: boolean;
 };
 
 export type StartJobResponse = { ok: true; jobId: string };
