@@ -48,6 +48,7 @@ export default function App() {
     const [language, setLanguage] = useState<LanguageCode>("pt");
     const [modelId, setModelId] = useState<ModelId>("small");
     const [format, setFormat] = useState<SubtitleFormat>("srt");
+    const [assKaraoke, setAssKaraoke] = useState(false);
 
     const [outputPath, setOutputPath] = useState<string>("");
     const [busy, setBusy] = useState(false);
@@ -186,20 +187,24 @@ export default function App() {
     }
 
     async function chooseOutput() {
-        if (!audio) return;
+        if (!audio) return null;
         const suggestedBaseName = baseNameFromFile(audio.name);
         const res = await window.api.chooseOutputPath({ suggestedBaseName, format });
-        if (!res.ok) return;
+        if (!res.ok) return null;
         setOutputPath(res.path);
+        return res.path;
     }
 
     async function start() {
         if (!audio) return;
 
-        // UX: se o usuário clicar gerar sem outputPath, abre o dialog ao invés de só desabilitar
-        if (!outputPath) {
-            await chooseOutput();
-            return;
+        let finalOutputPath = outputPath;
+
+        // UX: ao clicar gerar sem outputPath, escolhe destino e já inicia automaticamente
+        if (!finalOutputPath) {
+            const chosen = await chooseOutput();
+            if (!chosen) return;
+            finalOutputPath = chosen;
         }
 
         setBusy(true);
@@ -209,11 +214,12 @@ export default function App() {
 
         await window.api.startJob({
             audioPath: audio.path,
-            outputPath,
+            outputPath: finalOutputPath,
             language,
             modelId,
             format,
-            granularity
+            granularity,
+            assKaraoke
         });
     }
 
@@ -360,6 +366,22 @@ export default function App() {
                                     </button>
                                 </div>
                             </div>
+
+
+                            {format === "ass" && (
+                                <div>
+                                    <div style={styles.mini}>Estilo ASS</div>
+                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "#444" }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={assKaraoke}
+                                            onChange={(e) => setAssKaraoke(e.target.checked)}
+                                            disabled={busy}
+                                        />
+                                        Aplicar estilo karaokê (realce progressivo por palavra)
+                                    </label>
+                                </div>
+                            )}
 
                             {audio && audioUrl && (
                                 <div>

@@ -195,7 +195,7 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
             } else {
                 // gerar ass em temp e copiar pro output final
                 const tmpAss = res.srtPath.replace(/\.srt$/i, ".ass");
-                convertSrtFileToAss(res.srtPath, tmpAss);
+                convertSrtFileToAss(res.srtPath, tmpAss, { karaoke: Boolean(req.assKaraoke) });
                 fs.copyFileSync(tmpAss, req.outputPath);
             }
 
