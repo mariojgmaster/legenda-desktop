@@ -1,5 +1,13 @@
 :root {
 	color-scheme: light;
+	--app-content-bg: #f8fafc;
+	--card-bg: #ffffff;
+	--card-border: #d9e2f2;
+	--text-primary: #0f172a;
+	--text-secondary: #475569;
+	--input-bg: #ffffff;
+	--input-border: #d5dceb;
+	--btn-secondary-bg: #ffffff;
 }
 
 * {
@@ -17,8 +25,8 @@ body {
 	margin: 0;
 	font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
 	background: radial-gradient(circle at 10% 0%, #1f2b45 0%, #0f172a 30%, #0b1220 100%);
-	color: #111827;
-	overflow: auto;
+	color: var(--text-primary);
+	overflow: hidden;
 }
 
 button,
@@ -28,9 +36,9 @@ input {
 }
 
 button {
-	border: 1px solid #d5dceb;
-	background: #fff;
-	color: #0f172a;
+	border: 1px solid var(--input-border);
+	background: var(--btn-secondary-bg);
+	color: var(--text-primary);
 	padding: 8px 12px;
 	border-radius: 10px;
 	cursor: pointer;
@@ -57,8 +65,9 @@ input {
 	width: 100%;
 	padding: 9px 11px;
 	border-radius: 10px;
-	border: 1px solid #d5dceb;
-	background: #fff;
+	border: 1px solid var(--input-border);
+	background: var(--input-bg);
+	color: var(--text-primary);
 	transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
@@ -102,7 +111,7 @@ select:focus {
 	opacity: 0.75;
 	white-space: nowrap;
 	text-overflow: ellipsis;
-	overflow: auto;
+	overflow: hidden;
 }
 
 .window-controls {
@@ -115,19 +124,28 @@ select:focus {
 	-webkit-app-region: no-drag;
 }
 
-.window-control-btn {
-	width: 32px;
+.window-control-btn,
+.theme-toggle-btn {
 	height: 28px;
-	padding: 0;
 	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.08);
-	border: 1px solid rgba(255, 255, 255, 0.15);
-	color: #f1f5f9;
+	background: rgba(255, 255, 255, 0.12);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	color: #f8fafc;
 }
 
-.window-control-btn:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.15);
-	border-color: rgba(255, 255, 255, 0.24);
+.window-control-btn {
+	width: 32px;
+	padding: 0;
+}
+
+.theme-toggle-btn {
+	min-width: 42px;
+	padding: 0 10px;
+}
+
+.window-control-btn:hover:not(:disabled),
+.theme-toggle-btn:hover:not(:disabled) {
+	background: rgba(255, 255, 255, 0.22);
 	box-shadow: none;
 	transform: none;
 }
@@ -137,21 +155,15 @@ select:focus {
 	border-color: #ef4444;
 }
 
-
-.theme-toggle-btn {
-	height: 28px;
-	min-width: 42px;
-	padding: 0 10px;
-	border-radius: 8px;
-	background: rgba(255, 255, 255, 0.12);
-	border: 1px solid rgba(255, 255, 255, 0.2);
-	color: #f8fafc;
-}
-
-.theme-toggle-btn:hover:not(:disabled) {
-	background: rgba(255, 255, 255, 0.22);
-	box-shadow: none;
-	transform: none;
+[data-theme="dark"] {
+	--app-content-bg: #0f172a;
+	--card-bg: #111827;
+	--card-border: #334155;
+	--text-primary: #e2e8f0;
+	--text-secondary: #94a3b8;
+	--input-bg: #0b1220;
+	--input-border: #334155;
+	--btn-secondary-bg: #0b1220;
 }
 
 [data-theme="light"] .window-topbar {
@@ -179,18 +191,6 @@ select:focus {
 .app-card:hover {
 	transform: translateY(-1px);
 	box-shadow: 0 12px 26px rgba(15, 23, 42, 0.09);
-}
-
-@keyframes move {
-	0% {
-		transform: translateX(-20%);
-	}
-	50% {
-		transform: translateX(120%);
-	}
-	100% {
-		transform: translateX(120%);
-	}
 }
 
 @keyframes fadeUp {
