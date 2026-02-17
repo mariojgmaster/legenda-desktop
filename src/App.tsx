@@ -27,23 +27,9 @@ const STEPS: { key: StepKey; label: string }[] = [
 export default function App() {
     // Anti-tela-branca: se preload falhar, não explode o app
     if (!window.api) {
-    
-    async function handleMinimizeWindow() {
-        await window.api.windowMinimize();
-    }
-
-    async function handleToggleMaximizeWindow() {
-        const res = await window.api.windowMaximizeToggle();
-        if (res?.ok) setIsMaximized(res.maximized);
-    }
-
-    async function handleCloseWindow() {
-        await window.api.windowClose();
-    }
-
-    return (
+        return (
             <div style={styles.page}>
-                <h1 style={{ margin: "4px 0 14px" }}>Legenda Desktop</h1>
+                <h1 style={{ margin: "4px 0 14px" }}>Legenda (MVP)</h1>
                 <div style={styles.card}>
                     <h2 style={styles.h2}>Inicializando integração…</h2>
                     <p style={{ marginTop: 8, color: "#555", lineHeight: 1.4 }}>
@@ -85,7 +71,6 @@ export default function App() {
     } | null>(null);
 
     const [audioUrl, setAudioUrl] = useState<string>("");
-    const [isMaximized, setIsMaximized] = useState(false);
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -323,31 +308,9 @@ export default function App() {
 
     return (
         <div style={styles.page}>
-            <header className="window-topbar">
-                <div className="window-brand">
-                    <span className="window-dot" />
-                    <strong>Legenda Desktop</strong>
-                    <span className="window-subtitle">Transcrição profissional</span>
-                </div>
+            <h1 style={{ margin: "4px 0 14px" }}>Legenda (MVP)</h1>
 
-                <div className="window-controls no-drag">
-                    <button className="window-control-btn" onClick={handleMinimizeWindow} title="Minimizar" aria-label="Minimizar">
-                        —
-                    </button>
-                    <button className="window-control-btn" onClick={handleToggleMaximizeWindow} title="Maximizar" aria-label="Maximizar">
-                        {isMaximized ? "❐" : "□"}
-                    </button>
-                    <button className="window-control-btn close" onClick={handleCloseWindow} title="Fechar" aria-label="Fechar">
-                        ✕
-                    </button>
-                </div>
-            </header>
-
-            <main style={styles.contentWrap}>
-                <h1 style={styles.h1}>Legenda Desktop</h1>
-                <p style={styles.subheading}>Gere legendas com qualidade e fluxo otimizado em poucos cliques.</p>
-
-                <div style={styles.grid2}>
+            <div style={styles.grid2}>
                 {/* Configuração */}
                 <div style={styles.card}>
                     <h2 style={styles.h2}>Configuração</h2>
@@ -736,9 +699,9 @@ export default function App() {
             )}
 
             {/* Modal Renomear */}
-                {renameOpen && selected && (
-                    <div style={styles.modalBackdrop} onMouseDown={() => setRenameOpen(false)}>
-                        <div style={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
+            {renameOpen && selected && (
+                <div style={styles.modalBackdrop} onMouseDown={() => setRenameOpen(false)}>
+                    <div style={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
                         <h3 style={{ margin: 0 }}>Renomear arquivo</h3>
                         <div style={{ marginTop: 10, color: "#555", fontSize: 13 }}>
                             Nome atual: <b>{selected.fileName}</b>
@@ -767,46 +730,34 @@ export default function App() {
                             </button>
                         </div>
                     </div>
-                    </div>
-                )}
-            </main>
+                </div>
+            )}
         </div>
     );
 }
 
 const styles: Record<string, React.CSSProperties> = {
     page: {
-        fontFamily: "Inter, system-ui, Arial",
-        padding: 16,
-        maxWidth: 1320,
+        fontFamily: "system-ui, Arial",
+        padding: 18,
+        maxWidth: 1200,
         margin: "0 auto"
     },
-    contentWrap: {
-        background: "#f8fafc",
-        borderRadius: "0 0 14px 14px",
-        border: "1px solid rgba(226,232,240,0.8)",
-        borderTop: "none",
-        padding: 18,
-        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.26)"
-    },
-    h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "#0f172a" },
-    subheading: { margin: "8px 0 16px", fontSize: 13, color: "#475569" },
     grid2: {
         display: "grid",
-        gridTemplateColumns: "minmax(440px, 1fr) minmax(440px, 1fr)",
-        gap: 16
+        gridTemplateColumns: "1fr 1fr",
+        gap: 14
     },
     card: {
-        border: "1px solid #d9e2f2",
+        border: "1px solid #e6e6e6",
         borderRadius: 14,
-        padding: 16,
-        background: "#fff",
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)"
+        padding: 14,
+        background: "#fff"
     },
-    h2: { margin: 0, fontSize: 16, color: "#0f172a" },
+    h2: { margin: 0, fontSize: 16 },
     section: { marginTop: 12 },
-    label: { fontWeight: 800, marginBottom: 6, color: "#1e293b" },
-    mini: { fontSize: 12, color: "#64748b", marginBottom: 6 },
+    label: { fontWeight: 800, marginBottom: 6 },
+    mini: { fontSize: 12, color: "#666", marginBottom: 6 },
     gridOptions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
     pillOn: {
         padding: "7px 10px",
@@ -824,12 +775,9 @@ const styles: Record<string, React.CSSProperties> = {
     },
     primaryBtn: {
         width: "100%",
-        padding: "11px 12px",
+        padding: "10px 12px",
         borderRadius: 10,
-        border: "1px solid #0f3fb1",
-        background: "linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%)",
-        color: "#fff",
-        fontWeight: 700,
+        border: "1px solid #ddd",
         cursor: "pointer"
     },
     indeterminateBar: {
@@ -842,7 +790,7 @@ const styles: Record<string, React.CSSProperties> = {
     modalBackdrop: {
         position: "fixed",
         inset: 0,
-        background: "rgba(2,6,23,0.5)",
+        background: "rgba(0,0,0,0.25)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -917,7 +865,7 @@ const styles: Record<string, React.CSSProperties> = {
     menuPanel: {
         position: "fixed",
         background: "#fff",
-        border: "1px solid #d9e2f2",
+        border: "1px solid #e6e6e6",
         borderRadius: 12,
         padding: 6,
         boxShadow: "0 12px 30px rgba(0,0,0,0.08)"
