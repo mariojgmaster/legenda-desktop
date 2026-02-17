@@ -17,10 +17,6 @@ export const IPC = {
 
     GET_FILE_URL: "app:file:url",
 
-    WINDOW_MINIMIZE: "app:window:minimize",
-    WINDOW_MAXIMIZE_TOGGLE: "app:window:maximizeToggle",
-    WINDOW_CLOSE: "app:window:close",
-
     EVT_JOB_PROGRESS: "evt:jobs:progress",
     EVT_JOB_DONE: "evt:jobs:done",
     EVT_JOB_ERROR: "evt:jobs:error",
