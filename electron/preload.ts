@@ -36,6 +36,10 @@ contextBridge.exposeInMainWorld("api", {
     onGeneratedChanged: (cb: any) => on(IPC.EVT_GENERATED_CHANGED, cb),
 
     getFileUrl: (absPath: string) => ipcRenderer.invoke(IPC.GET_FILE_URL, { absPath }),
+
+    windowMinimize: () => ipcRenderer.invoke(IPC.WINDOW_MINIMIZE),
+    windowMaximizeToggle: () => ipcRenderer.invoke(IPC.WINDOW_MAXIMIZE_TOGGLE),
+    windowClose: () => ipcRenderer.invoke(IPC.WINDOW_CLOSE),
 });
 
 function on(channel: string, cb: (payload: any) => void) {

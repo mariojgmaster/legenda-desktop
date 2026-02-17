@@ -248,6 +248,27 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         return { ok: true };
     });
 
+
+    ipcMain.handle(IPC.WINDOW_MINIMIZE, async () => {
+        const win = mainWindowGetter();
+        if (!win.isDestroyed()) win.minimize();
+        return { ok: true };
+    });
+
+    ipcMain.handle(IPC.WINDOW_MAXIMIZE_TOGGLE, async () => {
+        const win = mainWindowGetter();
+        if (win.isDestroyed()) return { ok: true, maximized: false };
+        if (win.isMaximized()) win.unmaximize();
+        else win.maximize();
+        return { ok: true, maximized: win.isMaximized() };
+    });
+
+    ipcMain.handle(IPC.WINDOW_CLOSE, async () => {
+        const win = mainWindowGetter();
+        if (!win.isDestroyed()) win.close();
+        return { ok: true };
+    });
+
     ipcMain.handle(
         IPC.GET_FILE_URL,
         async (_e, { absPath }: GetFileUrlRequestDTO): Promise<GetFileUrlResponseDTO> => {

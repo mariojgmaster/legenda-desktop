@@ -1,4 +1,4 @@
-import { app, BrowserWindow, protocol } from "electron";
+import { app, BrowserWindow, protocol, Menu } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { registerHandlers } from "./ipc/handlers";
@@ -58,9 +58,13 @@ function registerAppFileProtocol() {
 
 function createWindow() {
     mainWin = new BrowserWindow({
-        // skipTaskbar: true,
         width: 1200,
         height: 760,
+        minWidth: 1080,
+        minHeight: 700,
+        frame: false,
+        titleBarStyle: "hidden",
+        backgroundColor: "#0b1220",
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
@@ -69,6 +73,8 @@ function createWindow() {
             devTools: true
         }
     });
+
+    Menu.setApplicationMenu(null);
 
     if (isDev) {
         mainWin.loadURL("http://127.0.0.1:5173");
