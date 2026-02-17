@@ -72,6 +72,7 @@ export default function App() {
 
     const [audioUrl, setAudioUrl] = useState<string>("");
     const [isMaximized, setIsMaximized] = useState(false);
+    const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -89,6 +90,7 @@ export default function App() {
 
     const canChooseOutput = !!audio && !busy;
     const canGenerate = !!audio && !!outputPath && !busy;
+    const isCompactLayout = viewportWidth < 1100;
 
     const disabledReason = useMemo(() => {
         if (busy) return "Processando...";
@@ -137,6 +139,12 @@ export default function App() {
             off4();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    useEffect(() => {
+        const onResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
     }, []);
 
     useEffect(() => {
@@ -348,7 +356,7 @@ export default function App() {
 
                 <div style={styles.grid2}>
                 {/* Configuração */}
-                <div style={styles.card}>
+                <div style={styles.card} className="app-card">
                     <h2 style={styles.h2}>Configuração</h2>
 
                     <section style={styles.section}>
@@ -465,7 +473,7 @@ export default function App() {
                 </div>
 
                 {/* Execução */}
-                <div style={styles.card}>
+                <div style={styles.card} className="app-card">
                     <h2 style={styles.h2}>Execução</h2>
 
                     <section style={styles.section}>
@@ -538,8 +546,8 @@ export default function App() {
             </div>
 
             {/* Arquivos gerados */}
-            <div style={{ ...styles.card, marginTop: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+            <div style={{ ...styles.card, marginTop: 14 }} className="app-card">
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <h2 style={styles.h2}>Arquivos gerados</h2>
 
                     <input
@@ -550,7 +558,7 @@ export default function App() {
                             padding: "8px 10px",
                             borderRadius: 10,
                             border: "1px solid #ddd",
-                            width: 280
+                            width: "min(320px, 100%)"
                         }}
                     />
                 </div>
@@ -564,9 +572,9 @@ export default function App() {
                         Nenhum resultado para “{query}”.
                     </div>
                 ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 12, marginTop: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "minmax(280px, 420px) minmax(0, 1fr)", gap: 12, marginTop: 12 }}>
                         {/* Lista */}
-                        <div style={{ borderRight: "1px solid #eee", paddingRight: 12, maxHeight: 320, overflow: "auto" }}>
+                        <div style={{ borderRight: isCompactLayout ? "none" : "1px solid #eee", paddingRight: isCompactLayout ? 0 : 12, maxHeight: 320, overflow: "auto", minWidth: 0 }}>
                             {filtered.map((g) => (
                                 <div
                                     key={g.id}
@@ -618,7 +626,7 @@ export default function App() {
                         </div>
 
                         {/* Detalhe */}
-                        <div>
+                        <div style={{ minWidth: 0 }}>
                             {!selected ? (
                                 <div style={{ color: "#777", fontSize: 13 }}>Selecione um item para ver detalhes.</div>
                             ) : (
@@ -776,9 +784,10 @@ export default function App() {
 const styles: Record<string, React.CSSProperties> = {
     page: {
         fontFamily: "Inter, system-ui, Arial",
-        padding: 16,
-        maxWidth: 1320,
-        margin: "0 auto"
+        padding: 0,
+        width: "100%",
+        minHeight: "100vh",
+        overflow: "hidden"
     },
     contentWrap: {
         background: "#f8fafc",
@@ -786,14 +795,18 @@ const styles: Record<string, React.CSSProperties> = {
         border: "1px solid rgba(226,232,240,0.8)",
         borderTop: "none",
         padding: 18,
-        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.26)"
+        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.26)",
+        minHeight: "calc(100vh - 48px)",
+        overflowY: "auto",
+        overflowX: "hidden"
     },
     h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "#0f172a" },
     subheading: { margin: "8px 0 16px", fontSize: 13, color: "#475569" },
     grid2: {
         display: "grid",
-        gridTemplateColumns: "minmax(440px, 1fr) minmax(440px, 1fr)",
-        gap: 16
+        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        gap: 16,
+        alignItems: "start"
     },
     card: {
         border: "1px solid #d9e2f2",
