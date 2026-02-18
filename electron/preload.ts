@@ -14,9 +14,7 @@ import type {
 
 contextBridge.exposeInMainWorld("api", {
     pickAudio: () => ipcRenderer.invoke(IPC.PICK_AUDIO),
-    pickAudios: () => ipcRenderer.invoke(IPC.PICK_AUDIOS),
     chooseOutputPath: (req: ChooseOutputPathRequest) => ipcRenderer.invoke(IPC.CHOOSE_OUTPUT, req),
-    chooseOutputDir: () => ipcRenderer.invoke(IPC.CHOOSE_OUTPUT_DIR),
 
     listModels: () => ipcRenderer.invoke(IPC.LIST_MODELS),
     downloadModel: (req: DownloadModelRequest) => ipcRenderer.invoke(IPC.DOWNLOAD_MODEL, req),
@@ -42,7 +40,6 @@ contextBridge.exposeInMainWorld("api", {
     windowMinimize: () => ipcRenderer.invoke(IPC.WINDOW_MINIMIZE),
     windowMaximizeToggle: () => ipcRenderer.invoke(IPC.WINDOW_MAXIMIZE_TOGGLE),
     windowClose: () => ipcRenderer.invoke(IPC.WINDOW_CLOSE),
-    setTheme: (theme: "light" | "dark") => ipcRenderer.invoke(IPC.APP_SET_THEME, { theme }),
 });
 
 function on(channel: string, cb: (payload: any) => void) {
