@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranscriptionController } from "./hooks/useTranscriptionController";
 import type { GeneratedFileDTO, GranularityPreset, LanguageCode, ModelId, SubtitleFormat } from "../shared/ipc/dtos";
 import type { SegmentPreviewDTO } from "../shared/ipc/dtos";
 
@@ -15,9 +16,7 @@ function sanitizeBaseName(input: string) {
     return cleaned.replace(/\s+/g, " ").trim();
 }
 
-type StepKey = "IDLE" | "PREPARING" | "TRANSCRIBING" | "CONVERTING" | "SAVING" | "DONE" | "ERROR";
-
-const STEPS: { key: StepKey; label: string }[] = [
+const STEPS = [
     { key: "PREPARING", label: "Preparando" },
     { key: "TRANSCRIBING", label: "Transcrevendo" },
     { key: "CONVERTING", label: "Convertendo" },
@@ -44,7 +43,8 @@ export default function App() {
         );
     }
 
-    const [audio, setAudio] = useState<{ path: string; name: string } | null>(null);
+    const [audios, setAudios] = useState<{ path: string; name: string }[]>([]);
+    const [activeAudioPath, setActiveAudioPath] = useState<string>("");
 
     const [language, setLanguage] = useState<LanguageCode>("pt");
     const [modelId, setModelId] = useState<ModelId>("small");
@@ -52,12 +52,7 @@ export default function App() {
     const [assKaraoke, setAssKaraoke] = useState(false);
 
     const [outputPath, setOutputPath] = useState<string>("");
-    const [busy, setBusy] = useState(false);
-
-    const [step, setStep] = useState<StepKey>("IDLE");
-    const [message, setMessage] = useState<string>("");
-
-    const [preview, setPreview] = useState<{ index: number; startMs: number; endMs: number; text: string }[]>([]);
+    const [outputDir, setOutputDir] = useState<string>("");
     const [generated, setGenerated] = useState<GeneratedFileDTO[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
 
@@ -124,7 +119,6 @@ export default function App() {
     const [isMaximized, setIsMaximized] = useState(false);
     const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
     const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("legenda:dark") !== "0");
-    const [currentJobId, setCurrentJobId] = useState<string>("");
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -140,16 +134,31 @@ export default function App() {
 
     const selected = useMemo(() => generated.find((g) => g.id === selectedId) || null, [generated, selectedId]);
 
-    const canChooseOutput = !!audio && !busy;
-    const canGenerate = !!audio && !!outputPath && !busy;
+    const controller = useTranscriptionController({
+        audios,
+        activeAudioPath,
+        outputPath,
+        outputDir,
+        language,
+        modelId,
+        format,
+        granularity,
+        assKaraoke,
+        onGeneratedRefresh: refreshGenerated
+    });
+
+    const { activeAudio, busy, step, message, currentJobId, batchQueue, preview, progressPercent, setMessage, setStep, setPreview, start, cancelCurrentJob } = controller;
+
+    const canChooseOutput = !!activeAudio && !busy;
+    const canGenerate = audios.length > 0 && (!!outputPath || !!outputDir) && !busy;
     const isCompactLayout = viewportWidth < 1100;
 
     const disabledReason = useMemo(() => {
         if (busy) return "Processando...";
-        if (!audio) return "Selecione um áudio";
-        if (!outputPath) return "Escolha onde salvar";
+        if (!activeAudio) return "Selecione um áudio";
+        if (!outputPath && !outputDir) return "Escolha onde salvar";
         return "";
-    }, [busy, audio, outputPath]);
+    }, [busy, activeAudio, outputPath, outputDir]);
 
     async function refreshGenerated(selectId?: string) {
         const res = await window.api.listGeneratedFiles();
@@ -159,42 +168,33 @@ export default function App() {
             else if (res.items.length > 0 && !selectedId) setSelectedId(res.items[0].id);
         }
     }
-
     useEffect(() => {
         refreshGenerated();
-
-        const off1 = window.api.onJobProgress((e) => {
-            setStep((e.step as StepKey) ?? "IDLE");
-            setMessage(e.message || "");
-            setPreviewMeta({ granularity });
-        });
-
-        const off2 = window.api.onJobDone((e) => {
-            setBusy(false);
-            setCurrentJobId("");
-            setStep("DONE");
-            setMessage("Concluído.");
-            setPreview(e.preview.map((p) => ({ index: p.index, startMs: p.startMs, endMs: p.endMs, text: p.text })));
-            refreshGenerated(e.generated.id);
-        });
-
-        const off3 = window.api.onJobError((e) => {
-            setBusy(false);
-            setCurrentJobId("");
-            setStep("ERROR");
-            setMessage(e.error.message || "Erro.");
-        });
-
-        const off4 = window.api.onGeneratedChanged(() => refreshGenerated());
-
-        return () => {
-            off1();
-            off2();
-            off3();
-            off4();
-        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        const onResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
+
+    useEffect(() => {
+        window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
+        window.api.setTheme(darkMode ? "dark" : "light");
+    }, [darkMode]);
+
+    useEffect(() => {
+        if (!activeAudio) {
+            setAudioUrl("");
+            return;
+        }
+
+        window.api.getFileUrl(activeAudio.path).then((u) => {
+            if (u.ok) setAudioUrl(u.url);
+            else setAudioUrl("");
+        });
+    }, [activeAudio]);
 
     useEffect(() => {
         const onResize = () => setViewportWidth(window.innerWidth);
@@ -243,8 +243,10 @@ export default function App() {
     async function pickAudio() {
         const res = await window.api.pickAudio();
         if (!res.ok) return;
-        setAudio(res.file);
+        setAudios([res.file]);
+        setActiveAudioPath(res.file.path);
         setOutputPath("");
+        setOutputDir("");
         setPreview([]);
         setStep("IDLE");
         setMessage(`Selecionado: ${res.file.name}`);
@@ -254,42 +256,57 @@ export default function App() {
         else setAudioUrl("");
     }
 
+    async function addAudios() {
+        const res = await window.api.pickAudios();
+        if (!res.ok) return;
+        setAudios((prev) => {
+            const map = new Map(prev.map((a) => [a.path, a]));
+            for (const f of res.files) map.set(f.path, f);
+            return Array.from(map.values());
+        });
+        if (!activeAudioPath && res.files[0]) setActiveAudioPath(res.files[0].path);
+        setOutputPath("");
+        setMessage(`${res.files.length} arquivo(s) adicionados para processamento em lote.`);
+    }
+
     async function chooseOutput() {
-        if (!audio) return null;
-        const suggestedBaseName = baseNameFromFile(audio.name);
+        if (!activeAudio) return null;
+        const suggestedBaseName = baseNameFromFile(activeAudio.name);
         const res = await window.api.chooseOutputPath({ suggestedBaseName, format });
         if (!res.ok) return null;
         setOutputPath(res.path);
+        setOutputDir("");
         return res.path;
     }
 
-    async function start() {
-        if (!audio) return;
+    async function chooseOutputDir() {
+        const res = await window.api.chooseOutputDir();
+        if (!res.ok) return null;
+        setOutputDir(res.dir);
+        setOutputPath("");
+        return res.dir;
+    }
 
-        let finalOutputPath = outputPath;
+    async function handleStart() {
+        if (audios.length === 0) return;
 
-        // UX: ao clicar gerar sem outputPath, escolhe destino e já inicia automaticamente
-        if (!finalOutputPath) {
-            const chosen = await chooseOutput();
-            if (!chosen) return;
-            finalOutputPath = chosen;
+        const isBatch = audios.length > 1;
+        let startOutputPath: string | undefined;
+        let startOutputDir: string | undefined;
+
+        if (isBatch && !outputDir) {
+            const chosenDir = await chooseOutputDir();
+            if (!chosenDir) return;
+            startOutputDir = chosenDir;
         }
 
-        setBusy(true);
-        setPreview([]);
-        setStep("PREPARING");
-        setMessage("Iniciando...");
+        if (!isBatch && !outputPath && !outputDir) {
+            const chosen = await chooseOutput();
+            if (!chosen) return;
+            startOutputPath = chosen;
+        }
 
-        const started = await window.api.startJob({
-            audioPath: audio.path,
-            outputPath: finalOutputPath,
-            language,
-            modelId,
-            format,
-            granularity,
-            assKaraoke
-        });
-        setCurrentJobId(started.jobId);
+        await start({ outputPath: startOutputPath, outputDir: startOutputDir });
     }
 
     // Ações por item
@@ -361,11 +378,24 @@ export default function App() {
     }, [step]);
 
     function flowColors(state: "idle" | "current" | "done" | "error") {
-        // tons pastéis
-        if (state === "idle") return { bg: "#f6f6f6", border: "#e6e6e6", text: "#777", line: "#e8e8e8" };
-        if (state === "current") return { bg: "#eeeeee", border: "#d6d6d6", text: "#444", line: "#d6d6d6" };
-        if (state === "done") return { bg: "#e9f6ee", border: "#bfe6cc", text: "#2f6b3f", line: "#bfe6cc" };
-        return { bg: "#fdecec", border: "#f2b8b8", text: "#8a1f1f", line: "#f2b8b8" };
+        if (state === "idle") {
+            return darkMode
+                ? { bg: "#111f34", border: "#2b3f5e", text: "#90a6c4", line: "#2b3f5e" }
+                : { bg: "#f1f5f9", border: "#d8e2ef", text: "#607086", line: "#d8e2ef" };
+        }
+        if (state === "current") {
+            return darkMode
+                ? { bg: "#1a2b45", border: "#3b5b86", text: "#dbeafe", line: "#3b5b86" }
+                : { bg: "#eaf2ff", border: "#b8cdf1", text: "#23406f", line: "#b8cdf1" };
+        }
+        if (state === "done") {
+            return darkMode
+                ? { bg: "#123327", border: "#26604a", text: "#a7f3d0", line: "#26604a" }
+                : { bg: "#e8f7ef", border: "#b7e2cd", text: "#255a41", line: "#b7e2cd" };
+        }
+        return darkMode
+            ? { bg: "#3b1e28", border: "#7a3448", text: "#fecdd3", line: "#7a3448" }
+            : { bg: "#fdecec", border: "#f2b8b8", text: "#8a1f1f", line: "#f2b8b8" };
     }
 
     // Mapeia step atual para índice do fluxo
@@ -388,15 +418,6 @@ export default function App() {
         await window.api.windowClose();
     }
 
-    async function cancelCurrentJob() {
-        if (!currentJobId) return;
-        await window.api.cancelJob({ jobId: currentJobId });
-        setBusy(false);
-        setCurrentJobId("");
-        setStep("IDLE");
-        setMessage("Processamento cancelado pelo usuário.");
-    }
-
     function msToClock(ms: number) {
         const total = Math.max(0, Math.floor(ms / 1000));
         const h = Math.floor(total / 3600);
@@ -414,22 +435,14 @@ export default function App() {
         await navigator.clipboard.writeText(lines.join("\n"));
     }
 
-    const progressPercent = useMemo(() => {
-        if (step === "DONE") return 100;
-        if (step === "SAVING") return 95;
-        if (step === "CONVERTING") return 82;
-        if (step === "TRANSCRIBING") return 58;
-        if (step === "PREPARING") return 18;
-        return 0;
-    }, [step]);
-
     return (
         <div style={styles.page} data-theme={darkMode ? "dark" : "light"}>
-            <header className="window-topbar">
+            <header className={`window-topbar ${busy ? "is-busy" : ""}`}>
                 <div className="window-brand">
                     <span className="window-dot" />
                     <strong>Legenda Desktop</strong>
                     <span className="window-subtitle">Transcrição profissional</span>
+                    <span className="window-status-chip">{busy ? `Processando${batchQueue.length > 0 ? ` (${batchQueue.length + 1} na fila)` : ""}` : "Pronto"}</span>
                 </div>
 
                 <div className="window-controls no-drag">
@@ -464,9 +477,20 @@ export default function App() {
                             <button onClick={pickAudio} disabled={busy}>
                                 Selecionar áudio
                             </button>
-                            <div style={{ color: "#444" }}>{audio ? audio.name : "Nenhum arquivo selecionado"}</div>
+                            <button onClick={addAudios} disabled={busy}>Adicionar em lote</button>
+                            <div style={{ color: "#444" }}>{activeAudio ? `${activeAudio.name}${audios.length > 1 ? ` (+${audios.length - 1})` : ""}` : "Nenhum arquivo selecionado"}</div>
                         </div>
-                        {audio && audioUrl && (
+                        {audios.length > 1 && (
+                            <div style={{ marginTop: 10 }}>
+                                <div style={styles.mini}>Arquivo ativo no lote</div>
+                                <select value={activeAudio?.path || ""} onChange={(e) => setActiveAudioPath(e.target.value)} disabled={busy}>
+                                    {audios.map((a) => (
+                                        <option key={a.path} value={a.path}>{a.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
+                        {activeAudio && audioUrl && (
                             <div style={{ marginTop: 10 }}>
                                 <audio controls src={audioUrl} style={{ width: "100%" }} />
                             </div>
@@ -526,7 +550,7 @@ export default function App() {
                                 </div>
                             )}
 
-                            {audio && audioUrl && (
+                            {activeAudio && audioUrl && (
                                 <div>
                                     {/* <label className="text-sm opacity-80">Granularidade</label> */}
                                     <div style={styles.mini}>Granularidade</div>
@@ -556,10 +580,17 @@ export default function App() {
 
                             <div>
                                 <div style={styles.mini}>Salvar como</div>
-                                <button onClick={chooseOutput} disabled={!canChooseOutput}>
-                                    Escolher onde salvar…
-                                </button>
-                                <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>{outputPath ? outputPath : "Nenhum local escolhido ainda."}</div>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                    <button onClick={chooseOutput} disabled={!canChooseOutput || audios.length > 1}>
+                                        Escolher arquivo de saída…
+                                    </button>
+                                    <button onClick={chooseOutputDir} disabled={!canChooseOutput}>
+                                        Escolher pasta de saída…
+                                    </button>
+                                </div>
+                                <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
+                                    {outputDir ? `Pasta: ${outputDir}` : outputPath ? outputPath : "Nenhum local escolhido ainda."}
+                                </div>
                             </div>
                         </div>
                     </section>
@@ -568,8 +599,8 @@ export default function App() {
                     <section style={styles.section}>
                         <div style={{ display: "flex", gap: 8 }}>
                         <button
-                            onClick={start}
-                            disabled={!audio || busy} // UX: permite clique mesmo sem outputPath (abre dialog)
+                            onClick={handleStart}
+                            disabled={audios.length === 0 || busy} // UX: permite clique mesmo sem outputPath (abre dialog)
                             style={styles.primaryBtn}
                             title={disabledReason}
                         >
@@ -582,7 +613,7 @@ export default function App() {
 
                         {!canGenerate && (
                             <div style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
-                                {busy ? "Processando..." : audio ? "Ao clicar, você escolherá onde salvar se ainda não escolheu." : "Selecione um áudio para continuar."}
+                                {busy ? "Processando..." : audios.length > 0 ? "Ao clicar, você escolherá onde salvar/pasta se ainda não escolheu." : "Selecione ao menos um áudio para continuar."}
                             </div>
                         )}
                     </section>
@@ -639,7 +670,7 @@ export default function App() {
                             <div style={{ marginTop: 10, height: 10, background: "#e8edf7", borderRadius: 999, overflow: "hidden" }}>
                                 <div style={{ ...styles.progressBar, width: `${progressPercent}%` }} />
                             </div>
-                            <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>{progressPercent}%</div>
+                            <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-secondary)" }}>{progressPercent}%</div>
                         </div>
                     </section>
 
@@ -654,7 +685,7 @@ export default function App() {
                             <div style={{ marginTop: 8, maxHeight: 260, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
                                 {preview.map((p) => (
                                     <div key={p.index} style={{ padding: 10, borderBottom: "1px solid #eef2f7", display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "150px 1fr auto", gap: 8, alignItems: "start" }}>
-                                        <div style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
+                                        <div style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
                                             {msToClock(p.startMs)} → {msToClock(p.endMs)}
                                         </div>
                                         <div style={{ fontSize: 13, lineHeight: 1.4 }}>{p.text}</div>
@@ -912,18 +943,18 @@ const styles: Record<string, React.CSSProperties> = {
         overflow: "hidden"
     },
     contentWrap: {
-        background: "#f8fafc",
+        background: "var(--app-content-bg)",
         borderRadius: "0 0 14px 14px",
         border: "1px solid rgba(226,232,240,0.8)",
         borderTop: "none",
         padding: 18,
-        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.26)",
+        boxShadow: "var(--surface-shadow)",
         minHeight: "calc(100vh - 48px)",
         overflowY: "auto",
         overflowX: "hidden"
     },
-    h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "#0f172a" },
-    subheading: { margin: "8px 0 16px", fontSize: 13, color: "#475569" },
+    h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "var(--text-primary)" },
+    subheading: { margin: "8px 0 16px", fontSize: 13, color: "var(--text-secondary)" },
     grid2: {
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
@@ -931,16 +962,16 @@ const styles: Record<string, React.CSSProperties> = {
         alignItems: "start"
     },
     card: {
-        border: "1px solid #d9e2f2",
+        border: "1px solid var(--card-border)",
         borderRadius: 14,
         padding: 16,
-        background: "#fff",
+        background: "var(--card-bg)",
         boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)"
     },
-    h2: { margin: 0, fontSize: 16, color: "#0f172a" },
+    h2: { margin: 0, fontSize: 16, color: "var(--text-primary)" },
     section: { marginTop: 12 },
-    label: { fontWeight: 800, marginBottom: 6, color: "#1e293b" },
-    mini: { fontSize: 12, color: "#64748b", marginBottom: 6 },
+    label: { fontWeight: 800, marginBottom: 6, color: "var(--text-primary)" },
+    mini: { fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 },
     gridOptions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
     pillOn: {
         padding: "7px 10px",
@@ -953,7 +984,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: "7px 10px",
         borderRadius: 999,
         border: "1px solid #eee",
-        background: "#fff",
+        background: "var(--card-bg)",
         cursor: "pointer"
     },
     primaryBtn: {
@@ -984,7 +1015,7 @@ const styles: Record<string, React.CSSProperties> = {
     modal: {
         width: 520,
         maxWidth: "100%",
-        background: "#fff",
+        background: "var(--card-bg)",
         borderRadius: 14,
         border: "1px solid #e6e6e6",
         padding: 14
@@ -1000,7 +1031,7 @@ const styles: Record<string, React.CSSProperties> = {
         height: 34,
         borderRadius: 10,
         border: "1px solid #e6e6e6",
-        background: "#fff",
+        background: "var(--card-bg)",
         cursor: "pointer",
         display: "grid",
         placeItems: "center",
@@ -1013,7 +1044,7 @@ const styles: Record<string, React.CSSProperties> = {
         top: 38,
         right: 0,
         width: 180,
-        background: "#fff",
+        background: "var(--card-bg)",
         border: "1px solid #e6e6e6",
         borderRadius: 12,
         padding: 6,
@@ -1049,8 +1080,8 @@ const styles: Record<string, React.CSSProperties> = {
     },
     menuPanel: {
         position: "fixed",
-        background: "#fff",
-        border: "1px solid #d9e2f2",
+        background: "var(--card-bg)",
+        border: "1px solid var(--card-border)",
         borderRadius: 12,
         padding: 6,
         boxShadow: "0 12px 30px rgba(0,0,0,0.08)"
@@ -1084,77 +1115,4 @@ const styles: Record<string, React.CSSProperties> = {
         flex: "0 0 auto"
     },
     flowHint: { marginTop: 8, fontSize: 12, color: "#777" },
-    previewWrap: {
-        position: "relative",
-        border: "1px solid #eee",
-        borderRadius: 12,
-        padding: "4px 12px 12px 12px",
-        background: "#fff",
-        maxHeight: 290,
-        overflow: "auto",
-    },
-
-    copyBlockBtn: {
-        position: "sticky", // fica “no topo” durante scroll do preview
-        top: 0,
-        float: "right", // garante canto superior direito dentro do wrap
-        zIndex: 5,
-        width: 28,
-        height: 28,
-        borderRadius: 10,
-        border: "1px solid #e6e6e655",
-        background: "#fff",
-        cursor: "pointer",
-        display: "grid",
-        placeItems: "center",
-        color: "#444",
-    },
-
-    previewList: {
-        marginTop: 34,
-    },
-
-    previewRow: {
-        position: "relative",
-        padding: "10px 10px",
-        borderRadius: 10,
-        border: "1px solid #f0f0f0EE",
-        marginBottom: 10,
-        background: "#fff",
-    },
-
-    previewRowHeader: {
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 10,
-    },
-
-    previewTime: {
-        fontSize: 12,
-        color: "#666",
-        fontStyle: "italic",
-        fontWeight: 800,
-    },
-
-    copyLineBtn: {
-        width: 30,
-        height: 30,
-        borderRadius: 10,
-        border: "1px solid #e6e6e655",
-        background: "#fff",
-        cursor: "pointer",
-        display: "grid",
-        placeItems: "center",
-        color: "#444",
-        transition: "opacity 120ms ease",
-    },
-
-    previewText: {
-        marginTop: 0,
-        fontSize: 13,
-        color: "#222",
-        lineHeight: 1,
-        whiteSpace: "normal",
-    },
 };

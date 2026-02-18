@@ -1,6 +1,8 @@
 export const IPC = {
     PICK_AUDIO: "app:audio:pick",
+    PICK_AUDIOS: "app:audio:pickMany",
     CHOOSE_OUTPUT: "app:output:choose",
+    CHOOSE_OUTPUT_DIR: "app:output:chooseDir",
 
     LIST_MODELS: "app:models:list",
     DOWNLOAD_MODEL: "app:models:download",
@@ -20,6 +22,7 @@ export const IPC = {
     WINDOW_MINIMIZE: "app:window:minimize",
     WINDOW_MAXIMIZE_TOGGLE: "app:window:maximizeToggle",
     WINDOW_CLOSE: "app:window:close",
+    APP_SET_THEME: "app:theme:set",
 
     EVT_JOB_PROGRESS: "evt:jobs:progress",
     EVT_JOB_DONE: "evt:jobs:done",

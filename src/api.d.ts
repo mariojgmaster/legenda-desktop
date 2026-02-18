@@ -7,7 +7,9 @@ declare global {
     interface Window {
         api: {
             pickAudio(): Promise<DTO.PickAudioResponse>;
+            pickAudios(): Promise<DTO.PickAudiosResponse>;
             chooseOutputPath(req: DTO.ChooseOutputPathRequest): Promise<DTO.ChooseOutputPathResponse>;
+            chooseOutputDir(): Promise<DTO.ChooseOutputDirResponse>;
 
             listModels(): Promise<DTO.ListModelsResponse>;
             downloadModel(req: DTO.DownloadModelRequest): Promise<DTO.DownloadModelResponse>;
@@ -31,6 +33,7 @@ declare global {
             windowMinimize(): Promise<{ ok: true }>;
             windowMaximizeToggle(): Promise<{ ok: true; maximized: boolean }>;
             windowClose(): Promise<{ ok: true }>;
+            setTheme(theme: "light" | "dark"): Promise<{ ok: true }>;
         };
     }
 }

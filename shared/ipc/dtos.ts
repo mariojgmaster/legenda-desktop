@@ -2,8 +2,14 @@ export type LanguageCode = "pt" | "en" | "es" | "fr" | "de" | "it";
 export type SubtitleFormat = "srt" | "ass";
 export type ModelId = "tiny" | "base" | "small" | "medium";
 
+export type AudioFileDTO = { path: string; name: string };
+
 export type PickAudioResponse =
-    | { ok: true; file: { path: string; name: string } }
+    | { ok: true; file: AudioFileDTO }
+    | { ok: false; canceled: true };
+
+export type PickAudiosResponse =
+    | { ok: true; files: AudioFileDTO[] }
     | { ok: false; canceled: true };
 
 export type ChooseOutputPathRequest = {
@@ -13,6 +19,10 @@ export type ChooseOutputPathRequest = {
 
 export type ChooseOutputPathResponse =
     | { ok: true; path: string }
+    | { ok: false; canceled: true };
+
+export type ChooseOutputDirResponse =
+    | { ok: true; dir: string }
     | { ok: false; canceled: true };
 
 export type ModelInfoDTO = {
@@ -35,7 +45,8 @@ export type StartJobRequest = {
     language: LanguageCode;
     modelId: ModelId;
     format: SubtitleFormat;
-    outputPath: string;
+    outputPath?: string;
+    outputDir?: string;
     granularity?: GranularityPreset;
     assKaraoke?: boolean;
 };

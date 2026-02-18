@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell } from "electron";
+import { app, dialog, ipcMain, shell, nativeTheme } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -17,6 +17,7 @@ import type {
     ListModelsResponse,
     OpenGeneratedFileRequest,
     PickAudioResponse,
+    PickAudiosResponse,
     RenameGeneratedFileRequest,
     ShowInFolderRequest,
     StartJobRequest
@@ -49,6 +50,17 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         return { ok: true, file: { path: p, name: path.basename(p) } };
     });
 
+
+    ipcMain.handle(IPC.PICK_AUDIOS, async (): Promise<PickAudiosResponse> => {
+        const win = mainWindowGetter();
+        const res = await dialog.showOpenDialog(win, {
+            properties: ["openFile", "multiSelections"],
+            filters: [{ name: "Áudio", extensions: ["mp3", "wav", "m4a", "flac", "ogg", "aac"] }]
+        });
+        if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
+        return { ok: true, files: res.filePaths.map((p) => ({ path: p, name: path.basename(p) })) };
+    });
+
     ipcMain.handle(IPC.CHOOSE_OUTPUT, async (_e, req: ChooseOutputPathRequest) => {
         const win = mainWindowGetter();
         const ext = req.format === "ass" ? "ass" : "srt";
@@ -62,7 +74,14 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         return { ok: true, path: res.filePath };
     });
 
-    // MODELOS (real: lê do cache local em userData/models)
+    ipcMain.handle(IPC.CHOOSE_OUTPUT_DIR, async () => {
+        const win = mainWindowGetter();
+        const res = await dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"] });
+        if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
+        return { ok: true, dir: res.filePaths[0] };
+    });
+
+    // MODELOS (mock por enquanto)
     ipcMain.handle(IPC.LIST_MODELS, async (): Promise<ListModelsResponse> => {
         const dir = WhisperPaths.modelsDir();
 
@@ -170,7 +189,12 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         const jobId = crypto.randomUUID();
 
         if (!req.audioPath) throw makeErr("AUDIO_NOT_SELECTED", "Selecione um áudio.", undefined, "PICK_AUDIO");
-        if (!req.outputPath) throw makeErr("OUTPUT_PATH_REQUIRED", "Escolha onde salvar antes de gerar.", undefined, "CHOOSE_OUTPUT");
+
+        const outputPath = req.outputPath || (req.outputDir
+            ? resolveNonCollidingPath(path.join(req.outputDir, `${path.parse(req.audioPath).name}.${req.format === "ass" ? "ass" : "srt"}`))
+            : "");
+
+        if (!outputPath) throw makeErr("OUTPUT_PATH_REQUIRED", "Escolha onde salvar antes de gerar.", undefined, "CHOOSE_OUTPUT");
 
         emitJobProgress(win, { jobId, step: "PREPARING", message: "Validando arquivos e modelo..." });
 
@@ -195,11 +219,11 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
                 );
 
                 if (req.format === "srt") {
-                    fs.copyFileSync(res.srtPath, req.outputPath);
+                    fs.copyFileSync(res.srtPath, outputPath);
                 } else {
                     const tmpAss = res.srtPath.replace(/\.srt$/i, ".ass");
                     convertSrtFileToAss(res.srtPath, tmpAss, { karaoke: Boolean(req.assKaraoke) });
-                    fs.copyFileSync(tmpAss, req.outputPath);
+                    fs.copyFileSync(tmpAss, outputPath);
                 }
 
                 emitJobProgress(win, { jobId, step: "CONVERTING", message: "Preparando legenda..." });
@@ -208,8 +232,8 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
                 const itemId = crypto.randomUUID();
                 const created = {
                     id: itemId,
-                    path: req.outputPath,
-                    fileName: path.basename(req.outputPath),
+                    path: outputPath,
+                    fileName: path.basename(outputPath),
                     format: req.format,
                     language: req.language,
                     modelId: req.modelId,
@@ -266,6 +290,15 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
     ipcMain.handle(IPC.WINDOW_CLOSE, async () => {
         const win = mainWindowGetter();
         if (!win.isDestroyed()) win.close();
+        return { ok: true };
+    });
+
+    ipcMain.handle(IPC.APP_SET_THEME, async (_e, { theme }: { theme: "light" | "dark" }) => {
+        const win = mainWindowGetter();
+        nativeTheme.themeSource = theme;
+        if (!win.isDestroyed()) {
+            win.setBackgroundColor(theme === "dark" ? "#0b1220" : "#eaf2ff");
+        }
         return { ok: true };
     });
 
