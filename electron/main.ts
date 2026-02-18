@@ -2,6 +2,7 @@ import { app, BrowserWindow, protocol, Menu } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import { registerHandlers } from "./ipc/handlers";
+import { ensureDir, WhisperPaths } from "./infra/whisper/WhisperPaths"; // 👈 ADD
 
 app.commandLine.appendSwitch("disable-features", "OutOfBlinkCors"); // opcional dev
 
@@ -13,14 +14,11 @@ function registerAppFileProtocol() {
     protocol.handle("appfile", async (request: Request) => {
         try {
             const url = new URL(request.url);
-            // Ex.: appfile://audio?path=...
             const encoded = url.searchParams.get("path");
             if (!encoded) return new Response("Missing path", { status: 400 });
 
-            // base64url -> string
             const absPath = Buffer.from(encoded, "base64url").toString("utf8");
 
-            // Segurança básica
             if (!fs.existsSync(absPath)) return new Response("Not found", { status: 404 });
             const st = fs.statSync(absPath);
             if (!st.isFile()) return new Response("Not a file", { status: 400 });
@@ -29,10 +27,8 @@ function registerAppFileProtocol() {
             const allowed = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
             if (!allowed.has(ext)) return new Response("Unsupported", { status: 415 });
 
-            // Conteúdo
             const data = await fs.promises.readFile(absPath);
 
-            // MIME (mínimo necessário pro <audio>)
             const mime =
                 ext === ".mp3" ? "audio/mpeg" :
                     ext === ".wav" ? "audio/wav" :
@@ -54,6 +50,48 @@ function registerAppFileProtocol() {
             return new Response("Bad request", { status: 400 });
         }
     });
+}
+
+// ✅ NOVO: garante que os modelos bundled existam em userData/models
+function ensureBundledModelsInstalled() {
+    const destDir = WhisperPaths.modelsDir(); // já garante dir
+    const srcDir = app.isPackaged
+        ? path.join(process.resourcesPath, "models")
+        : path.join(process.cwd(), "electron", "assets", "models");
+
+    const modelFiles = [
+        "ggml-tiny.bin",
+        "ggml-base.bin",
+        "ggml-small.bin",
+        "ggml-medium.bin",
+    ];
+
+    // Se não existir (pack mal configurado), não quebra o app inteiro: loga e segue.
+    if (!fs.existsSync(srcDir)) {
+        console.warn("[models] srcDir não encontrado:", srcDir);
+        return;
+    }
+
+    ensureDir(destDir);
+
+    for (const file of modelFiles) {
+        const src = path.join(srcDir, file);
+        const dst = path.join(destDir, file);
+
+        if (fs.existsSync(dst)) continue; // não sobrescreve
+
+        if (!fs.existsSync(src)) {
+            console.warn("[models] arquivo não encontrado no bundle:", src);
+            continue;
+        }
+
+        try {
+            fs.copyFileSync(src, dst);
+            console.log("[models] instalado:", file);
+        } catch (e: any) {
+            console.warn("[models] falha ao copiar:", file, e?.message || e);
+        }
+    }
 }
 
 function createWindow() {
@@ -78,9 +116,7 @@ function createWindow() {
 
     if (isDev) {
         mainWin.loadURL("http://127.0.0.1:5173");
-        // mainWin.webContents.openDevTools({ mode: "detach" });
     } else {
-        // __dirname = dist-electron/electron
         mainWin.loadFile(path.join(__dirname, "..", "..", "dist", "index.html"));
     }
 
@@ -101,7 +137,12 @@ ${desc}`));
 
 app.whenReady().then(() => {
     registerAppFileProtocol();
+
+    // ✅ aqui é o ponto correto: app pronto, userData pronto
+    ensureBundledModelsInstalled();
+
     createWindow();
+
     app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
