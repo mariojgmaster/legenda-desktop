@@ -1,4 +1,4 @@
-import { app, dialog, ipcMain, shell } from "electron";
+import { app, dialog, ipcMain, shell, nativeTheme } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -17,6 +17,7 @@ import type {
     ListModelsResponse,
     OpenGeneratedFileRequest,
     PickAudioResponse,
+    PickAudiosResponse,
     RenameGeneratedFileRequest,
     ShowInFolderRequest,
     StartJobRequest
@@ -30,6 +31,8 @@ import { parseSrt } from "../utils/srtParse";
 
 import { WhisperRunner } from "../infra/whisper/WhisperRunner";
 import type { WhisperLanguage, WhisperModel } from "../infra/whisper/types";
+
+const ALLOWED_AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
 
 export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow) {
     const store = new GeneratedFilesStore(app.getPath("userData"));
@@ -46,6 +49,17 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         return { ok: true, file: { path: p, name: path.basename(p) } };
     });
 
+
+    ipcMain.handle(IPC.PICK_AUDIOS, async (): Promise<PickAudiosResponse> => {
+        const win = mainWindowGetter();
+        const res = await dialog.showOpenDialog(win, {
+            properties: ["openFile", "multiSelections"],
+            filters: [{ name: "Áudio", extensions: ["mp3", "wav", "m4a", "flac", "ogg", "aac"] }]
+        });
+        if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
+        return { ok: true, files: res.filePaths.map((p) => ({ path: p, name: path.basename(p) })) };
+    });
+
     ipcMain.handle(IPC.CHOOSE_OUTPUT, async (_e, req: ChooseOutputPathRequest) => {
         const win = mainWindowGetter();
         const ext = req.format === "ass" ? "ass" : "srt";
@@ -57,6 +71,13 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
 
         if (res.canceled || !res.filePath) return { ok: false, canceled: true };
         return { ok: true, path: res.filePath };
+    });
+
+    ipcMain.handle(IPC.CHOOSE_OUTPUT_DIR, async () => {
+        const win = mainWindowGetter();
+        const res = await dialog.showOpenDialog(win, { properties: ["openDirectory", "createDirectory"] });
+        if (res.canceled || res.filePaths.length === 0) return { ok: false, canceled: true };
+        return { ok: true, dir: res.filePaths[0] };
     });
 
     // MODELOS (mock por enquanto)
@@ -161,81 +182,79 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         const win = mainWindowGetter();
         const jobId = crypto.randomUUID();
 
-        // validações essenciais
         if (!req.audioPath) throw makeErr("AUDIO_NOT_SELECTED", "Selecione um áudio.", undefined, "PICK_AUDIO");
-        if (!req.outputPath) throw makeErr("OUTPUT_PATH_REQUIRED", "Escolha onde salvar antes de gerar.", undefined, "CHOOSE_OUTPUT");
 
-        // ✅ SRT real via whisper.cpp
+        const outputPath = req.outputPath || (req.outputDir
+            ? resolveNonCollidingPath(path.join(req.outputDir, `${path.parse(req.audioPath).name}.${req.format === "ass" ? "ass" : "srt"}`))
+            : "");
+
+        if (!outputPath) throw makeErr("OUTPUT_PATH_REQUIRED", "Escolha onde salvar antes de gerar.", undefined, "CHOOSE_OUTPUT");
+
         emitJobProgress(win, { jobId, step: "PREPARING", message: "Validando arquivos e modelo..." });
 
         const runner = new WhisperRunner();
         runners.set(jobId, runner);
 
-        try {
-            emitJobProgress(win, { jobId, step: "TRANSCRIBING", message: "Transcrevendo áudio (whisper)..." });
+        (async () => {
+            try {
+                emitJobProgress(win, { jobId, step: "TRANSCRIBING", message: "Transcrevendo áudio (whisper)..." });
 
-            const language = (req.language || "pt") as WhisperLanguage;
-            const model = (req.modelId || "small") as WhisperModel;
+                const language = (req.language || "pt") as WhisperLanguage;
+                const model = (req.modelId || "small") as WhisperModel;
 
-            const res = await runner.run(
-                {
-                    audioPath: req.audioPath,
-                    language,
-                    model,
-                    granularity: req.granularity ?? "MEDIUM",
-                },
-                // log do whisper (opcional): você pode mapear pra UI depois
-                (_line) => { /* no MVP: ignore ou faça throttle se quiser mostrar */ }
-            );
+                const res = await runner.run(
+                    {
+                        audioPath: req.audioPath,
+                        language,
+                        model,
+                        granularity: req.granularity ?? "MEDIUM",
+                    },
+                    (_line) => { }
+                );
 
-            if (req.format === "srt") {
-                fs.copyFileSync(res.srtPath, req.outputPath);
-            } else {
-                // gerar ass em temp e copiar pro output final
-                const tmpAss = res.srtPath.replace(/\.srt$/i, ".ass");
-                convertSrtFileToAss(res.srtPath, tmpAss);
-                fs.copyFileSync(tmpAss, req.outputPath);
+                if (req.format === "srt") {
+                    fs.copyFileSync(res.srtPath, outputPath);
+                } else {
+                    const tmpAss = res.srtPath.replace(/\.srt$/i, ".ass");
+                    convertSrtFileToAss(res.srtPath, tmpAss, { karaoke: Boolean(req.assKaraoke) });
+                    fs.copyFileSync(tmpAss, outputPath);
+                }
+
+                emitJobProgress(win, { jobId, step: "CONVERTING", message: "Preparando legenda..." });
+                emitJobProgress(win, { jobId, step: "SAVING", message: "Salvando arquivo..." });
+
+                const itemId = crypto.randomUUID();
+                const created = {
+                    id: itemId,
+                    path: outputPath,
+                    fileName: path.basename(outputPath),
+                    format: req.format,
+                    language: req.language,
+                    modelId: req.modelId,
+                    createdAtISO: new Date().toISOString(),
+                    exists: true
+                };
+
+                store.add(created);
+                emitGeneratedChanged(win, { reason: "CREATED" });
+
+                const preview = parseSrt(fs.readFileSync(res.srtPath, "utf-8"));
+
+                emitJobDone(win, {
+                    jobId,
+                    generated: { id: created.id, path: created.path, fileName: created.fileName },
+                    preview
+                });
+
+                emitJobProgress(win, { jobId, step: "DONE", message: "Concluído." });
+            } catch (e: any) {
+                emitJobError(win, { jobId, error: makeErr("WHISPER_FAILED", "Falha ao transcrever com Whisper.", e?.message) });
+            } finally {
+                runners.delete(jobId);
             }
+        })();
 
-            emitJobProgress(win, { jobId, step: "CONVERTING", message: "Preparando legenda..." });
-            await sleep(50);
-
-            emitJobProgress(win, { jobId, step: "SAVING", message: "Salvando arquivo..." });
-
-            const itemId = crypto.randomUUID();
-            const created = {
-                id: itemId,
-                path: req.outputPath,
-                fileName: path.basename(req.outputPath),
-                format: req.format,
-                language: req.language,
-                modelId: req.modelId,
-                createdAtISO: new Date().toISOString(),
-                exists: true
-            };
-
-            store.add(created);
-            emitGeneratedChanged(win, { reason: "CREATED" });
-
-            const preview = parseSrt(
-                fs.readFileSync(res.srtPath, "utf-8")
-            );
-
-            emitJobDone(win, {
-                jobId,
-                generated: { id: created.id, path: created.path, fileName: created.fileName },
-                preview
-            });
-
-            emitJobProgress(win, { jobId, step: "DONE", message: "Concluído." });
-
-            return { ok: true, jobId };
-        } catch (e: any) {
-            emitJobError(win, { jobId, error: makeErr("WHISPER_FAILED", "Falha ao transcrever com Whisper.", e?.message) });
-            throw e;
-        } finally {
-            runners.delete(jobId);
-        }
+        return { ok: true, jobId };
     });
 
     ipcMain.handle(IPC.JOB_CANCEL, async (_e, { jobId }: { jobId: string }) => {
@@ -243,6 +262,36 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
         if (r) {
             r.cancel();
             runners.delete(jobId);
+        }
+        return { ok: true };
+    });
+
+
+    ipcMain.handle(IPC.WINDOW_MINIMIZE, async () => {
+        const win = mainWindowGetter();
+        if (!win.isDestroyed()) win.minimize();
+        return { ok: true };
+    });
+
+    ipcMain.handle(IPC.WINDOW_MAXIMIZE_TOGGLE, async () => {
+        const win = mainWindowGetter();
+        if (win.isDestroyed()) return { ok: true, maximized: false };
+        if (win.isMaximized()) win.unmaximize();
+        else win.maximize();
+        return { ok: true, maximized: win.isMaximized() };
+    });
+
+    ipcMain.handle(IPC.WINDOW_CLOSE, async () => {
+        const win = mainWindowGetter();
+        if (!win.isDestroyed()) win.close();
+        return { ok: true };
+    });
+
+    ipcMain.handle(IPC.APP_SET_THEME, async (_e, { theme }: { theme: "light" | "dark" }) => {
+        const win = mainWindowGetter();
+        nativeTheme.themeSource = theme;
+        if (!win.isDestroyed()) {
+            win.setBackgroundColor(theme === "dark" ? "#0b1220" : "#eaf2ff");
         }
         return { ok: true };
     });
@@ -267,8 +316,7 @@ export function registerHandlers(mainWindowGetter: () => Electron.BrowserWindow)
 
                 // (Opcional) validação por extensão para áudio
                 const ext = path.extname(absPath).toLowerCase();
-                const allowed = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"]);
-                if (!allowed.has(ext)) {
+                if (!ALLOWED_AUDIO_EXTENSIONS.has(ext)) {
                     return { ok: false, message: "Formato de áudio não suportado." };
                 }
 
@@ -299,8 +347,4 @@ function resolveNonCollidingPath(p: string) {
         if (!fs.existsSync(candidate)) return candidate;
     }
     return p;
-}
-
-function sleep(ms: number) {
-    return new Promise((r) => setTimeout(r, ms));
 }

@@ -4,37 +4,39 @@ import type { GeneratedFileDTO } from "../../shared/ipc/dtos";
 
 export class GeneratedFilesStore {
     private filePath: string;
+    private items: GeneratedFileDTO[];
 
     constructor(userDataPath: string) {
         this.filePath = path.join(userDataPath, "generated.json");
         if (!fs.existsSync(this.filePath)) {
-            fs.writeFileSync(this.filePath, JSON.stringify({ items: [] }, null, 2), "utf-8");
+            fs.writeFileSync(this.filePath, JSON.stringify({ items: [] }), "utf-8");
         }
+
+        const raw = fs.readFileSync(this.filePath, "utf-8");
+        const parsed = JSON.parse(raw) as { items?: GeneratedFileDTO[] };
+        this.items = Array.isArray(parsed.items) ? parsed.items : [];
     }
 
     list(): GeneratedFileDTO[] {
-        const raw = fs.readFileSync(this.filePath, "utf-8");
-        const parsed = JSON.parse(raw) as { items: GeneratedFileDTO[] };
-        return parsed.items ?? [];
+        return [...this.items];
     }
 
-    saveAll(items: GeneratedFileDTO[]) {
-        fs.writeFileSync(this.filePath, JSON.stringify({ items }, null, 2), "utf-8");
+    private persist() {
+        fs.writeFileSync(this.filePath, JSON.stringify({ items: this.items }), "utf-8");
     }
 
     add(item: GeneratedFileDTO) {
-        const items = this.list();
-        items.unshift(item);
-        this.saveAll(items);
+        this.items.unshift(item);
+        this.persist();
     }
 
     update(id: string, updater: (x: GeneratedFileDTO) => GeneratedFileDTO) {
-        const items = this.list().map((x) => (x.id === id ? updater(x) : x));
-        this.saveAll(items);
+        this.items = this.items.map((x) => (x.id === id ? updater(x) : x));
+        this.persist();
     }
 
     remove(id: string) {
-        const items = this.list().filter((x) => x.id !== id);
-        this.saveAll(items);
+        this.items = this.items.filter((x) => x.id !== id);
+        this.persist();
     }
 }
