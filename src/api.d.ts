@@ -27,6 +27,10 @@ declare global {
             onJobError(cb: (e: EVT.JobErrorEvent) => void): () => void;
             onModelDownloadProgress(cb: (e: EVT.ModelsDownloadProgressEvent) => void): () => void;
             onGeneratedChanged(cb: (e: EVT.GeneratedFilesChangedEvent) => void): () => void;
+
+            windowMinimize(): Promise<{ ok: true }>;
+            windowMaximizeToggle(): Promise<{ ok: true; maximized: boolean }>;
+            windowClose(): Promise<{ ok: true }>;
         };
     }
 }
