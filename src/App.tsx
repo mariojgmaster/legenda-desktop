@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useTranscriptionController } from "./hooks/useTranscriptionController";
 import type { GeneratedFileDTO, GranularityPreset, LanguageCode, ModelId, SubtitleFormat } from "../shared/ipc/dtos";
+import type { SegmentPreviewDTO } from "../shared/ipc/dtos";
 
 import "./App.css";
 
@@ -56,6 +57,55 @@ export default function App() {
     const [selectedId, setSelectedId] = useState<string>("");
 
     const [granularity, setGranularity] = useState<GranularityPreset>("MEDIUM");
+
+    const [hoveredCueIndex, setHoveredCueIndex] = useState<number | null>(null);
+
+    const [previewMeta, setPreviewMeta] = useState<{ granularity: GranularityPreset } | null>(null);
+
+
+    async function copyToClipboard(text: string) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            // fallback simples
+            try {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.left = "-9999px";
+                ta.style.top = "-9999px";
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                const ok = document.execCommand("copy");
+                document.body.removeChild(ta);
+                return ok;
+            } catch {
+                return false;
+            }
+        }
+    }
+
+    function buildPreviewBlockText(cues: typeof preview) {
+        // Formato simples e útil para colar em editor/chat:
+        // mm:ss --> mm:ss
+        // texto
+        return cues
+            .map((c) => `${formatMs(c.startMs)} --> ${formatMs(c.endMs)}\n${c.text}`)
+            .join("\n\n");
+    }
+
+    function CopyIcon({ size = 16 }: { size?: number }) {
+        return (
+            <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                    d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10V1zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H10V7h9v14z"
+                    fill="currentColor"
+                />
+            </svg>
+        );
+    }
 
     const MENU_W = 200;
     const MENU_PAD = 10;
@@ -145,6 +195,10 @@ export default function App() {
             else setAudioUrl("");
         });
     }, [activeAudio]);
+
+    useEffect(() => {
+        window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
+    }, [darkMode]);
 
     useEffect(() => {
         if (!menu) return;
@@ -500,6 +554,16 @@ export default function App() {
                                         <option value="HIGH">Alta</option>
                                         <option value="ULTRA">Altíssima (mais picado)</option>
                                     </select>
+
+                                    <div style={{ marginTop: 8, fontSize: 12, color: "#666", lineHeight: 1.35 }}>
+                                        <b>{GRANULARITY_INFO[granularity].title}:</b> {GRANULARITY_INFO[granularity].desc}
+                                    </div>
+
+                                    {/* {preview.length > 0 && isPreviewStale && (
+                                        <div style={{ marginTop: 8, fontSize: 12, color: "#8a1f1f" }}>
+                                            A prévia atual foi gerada com <b>{previewMeta?.granularity}</b>. Gere novamente para refletir <b>{granularity}</b>.
+                                        </div>
+                                    )} */}
                                 </div>
                             )}
 
@@ -1015,7 +1079,7 @@ const styles: Record<string, React.CSSProperties> = {
     flowRow: {
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: 5,
         flexWrap: "nowrap",
         overflowX: "auto",
         overflowY: "hidden",
@@ -1023,7 +1087,7 @@ const styles: Record<string, React.CSSProperties> = {
         WebkitOverflowScrolling: "touch"
     },
     flowNode: {
-        padding: "8px 12px",
+        padding: "8px",
         borderRadius: 999,
         border: "1px solid #e6e6e6",
         fontSize: 12,
