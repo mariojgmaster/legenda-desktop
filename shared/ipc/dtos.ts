@@ -95,3 +95,14 @@ export type GetFileUrlResponseDTO =
     | { ok: false; message?: string };
 
 export type GranularityPreset = "LOW" | "MEDIUM" | "HIGH" | "ULTRA";
+
+export type SubtitleCueDTO = {
+  index: number;
+  startMs: number;
+  endMs: number;
+  text: string;
+};
+
+export type SubtitlePreviewDTO = {
+  cues: SubtitleCueDTO[];
+};

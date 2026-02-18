@@ -2,6 +2,7 @@ import { app, BrowserWindow, protocol, Menu, Tray, nativeImage } from "electron"
 import fs from "node:fs";
 import path from "node:path";
 import { registerHandlers } from "./ipc/handlers";
+import { ensureDir, WhisperPaths } from "./infra/whisper/WhisperPaths"; // 👈 ADD
 
 app.commandLine.appendSwitch("disable-features", "OutOfBlinkCors"); // opcional dev
 
@@ -103,6 +104,48 @@ function registerAppFileProtocol() {
     });
 }
 
+// ✅ NOVO: garante que os modelos bundled existam em userData/models
+function ensureBundledModelsInstalled() {
+    const destDir = WhisperPaths.modelsDir(); // já garante dir
+    const srcDir = app.isPackaged
+        ? path.join(process.resourcesPath, "models")
+        : path.join(process.cwd(), "electron", "assets", "models");
+
+    const modelFiles = [
+        "ggml-tiny.bin",
+        "ggml-base.bin",
+        "ggml-small.bin",
+        "ggml-medium.bin",
+    ];
+
+    // Se não existir (pack mal configurado), não quebra o app inteiro: loga e segue.
+    if (!fs.existsSync(srcDir)) {
+        console.warn("[models] srcDir não encontrado:", srcDir);
+        return;
+    }
+
+    ensureDir(destDir);
+
+    for (const file of modelFiles) {
+        const src = path.join(srcDir, file);
+        const dst = path.join(destDir, file);
+
+        if (fs.existsSync(dst)) continue; // não sobrescreve
+
+        if (!fs.existsSync(src)) {
+            console.warn("[models] arquivo não encontrado no bundle:", src);
+            continue;
+        }
+
+        try {
+            fs.copyFileSync(src, dst);
+            console.log("[models] instalado:", file);
+        } catch (e: any) {
+            console.warn("[models] falha ao copiar:", file, e?.message || e);
+        }
+    }
+}
+
 function createWindow() {
     mainWin = new BrowserWindow({
         width: 1200,
@@ -151,6 +194,10 @@ function createWindow() {
 
 app.whenReady().then(() => {
     registerAppFileProtocol();
+
+    // ✅ aqui é o ponto correto: app pronto, userData pronto
+    ensureBundledModelsInstalled();
+
     createWindow();
     createTray();
 
