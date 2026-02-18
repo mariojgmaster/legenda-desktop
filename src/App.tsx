@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useTranscriptionController } from "./hooks/useTranscriptionController";
 import type { GeneratedFileDTO, GranularityPreset, LanguageCode, ModelId, SubtitleFormat } from "../shared/ipc/dtos";
 
 import "./App.css";
@@ -15,7 +14,9 @@ function sanitizeBaseName(input: string) {
     return cleaned.replace(/\s+/g, " ").trim();
 }
 
-const STEPS = [
+type StepKey = "IDLE" | "PREPARING" | "TRANSCRIBING" | "CONVERTING" | "SAVING" | "DONE" | "ERROR";
+
+const STEPS: { key: StepKey; label: string }[] = [
     { key: "PREPARING", label: "Preparando" },
     { key: "TRANSCRIBING", label: "Transcrevendo" },
     { key: "CONVERTING", label: "Convertendo" },
@@ -52,6 +53,12 @@ export default function App() {
 
     const [outputPath, setOutputPath] = useState<string>("");
     const [outputDir, setOutputDir] = useState<string>("");
+    const [busy, setBusy] = useState(false);
+
+    const [step, setStep] = useState<StepKey>("IDLE");
+    const [message, setMessage] = useState<string>("");
+
+    const [preview, setPreview] = useState<{ index: number; startMs: number; endMs: number; text: string }[]>([]);
     const [generated, setGenerated] = useState<GeneratedFileDTO[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
 
@@ -69,6 +76,8 @@ export default function App() {
     const [isMaximized, setIsMaximized] = useState(false);
     const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
     const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("legenda:dark") !== "0");
+    const [currentJobId, setCurrentJobId] = useState<string>("");
+    const [batchQueue, setBatchQueue] = useState<string[]>([]);
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -84,20 +93,10 @@ export default function App() {
 
     const selected = useMemo(() => generated.find((g) => g.id === selectedId) || null, [generated, selectedId]);
 
-    const controller = useTranscriptionController({
-        audios,
-        activeAudioPath,
-        outputPath,
-        outputDir,
-        language,
-        modelId,
-        format,
-        granularity,
-        assKaraoke,
-        onGeneratedRefresh: refreshGenerated
-    });
-
-    const { activeAudio, busy, step, message, currentJobId, batchQueue, preview, progressPercent, setMessage, setStep, setPreview, start, cancelCurrentJob } = controller;
+    const activeAudio = useMemo(() => {
+        if (audios.length === 0) return null;
+        return audios.find((a) => a.path === activeAudioPath) || audios[0];
+    }, [audios, activeAudioPath]);
 
     const canChooseOutput = !!activeAudio && !busy;
     const canGenerate = audios.length > 0 && (!!outputPath || !!outputDir) && !busy;
@@ -118,33 +117,70 @@ export default function App() {
             else if (res.items.length > 0 && !selectedId) setSelectedId(res.items[0].id);
         }
     }
+
     useEffect(() => {
         refreshGenerated();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+
+        const off1 = window.api.onJobProgress((e) => {
+            setStep((e.step as StepKey) ?? "IDLE");
+            setMessage(e.message || "");
+        });
+
+        const off2 = window.api.onJobDone(async (e) => {
+            setPreview(e.preview.map((p) => ({ index: p.index, startMs: p.startMs, endMs: p.endMs, text: p.text })));
+            refreshGenerated(e.generated.id);
+
+            if (batchQueue.length > 0) {
+                const [nextPath, ...rest] = batchQueue;
+                setBatchQueue(rest);
+                const nextAudio = audios.find((a) => a.path === nextPath);
+                if (nextAudio) {
+                    setActiveAudioPath(nextAudio.path);
+                    setMessage(`Processando próximo arquivo (${rest.length + 1} restante)...`);
+                    const started = await window.api.startJob({
+                        audioPath: nextAudio.path,
+                        outputPath: outputPath || undefined,
+                        outputDir: outputDir || undefined,
+                        language,
+                        modelId,
+                        format,
+                        granularity,
+                        assKaraoke
+                    });
+                    setCurrentJobId(started.jobId);
+                    return;
+                }
+            }
+
+            setBusy(false);
+            setCurrentJobId("");
+            setStep("DONE");
+            setMessage("Concluído.");
+        });
+
+        const off3 = window.api.onJobError((e) => {
+            setBusy(false);
+            setCurrentJobId("");
+            setBatchQueue([]);
+            setStep("ERROR");
+            setMessage(e.error.message || "Erro.");
+        });
+
+        const off4 = window.api.onGeneratedChanged(() => refreshGenerated());
+
+        return () => {
+            off1();
+            off2();
+            off3();
+            off4();
+        };
+    }, [audios, batchQueue, outputPath, outputDir, language, modelId, format, granularity, assKaraoke]);
 
     useEffect(() => {
         const onResize = () => setViewportWidth(window.innerWidth);
         window.addEventListener("resize", onResize);
         return () => window.removeEventListener("resize", onResize);
     }, []);
-
-    useEffect(() => {
-        window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
-        window.api.setTheme(darkMode ? "dark" : "light");
-    }, [darkMode]);
-
-    useEffect(() => {
-        if (!activeAudio) {
-            setAudioUrl("");
-            return;
-        }
-
-        window.api.getFileUrl(activeAudio.path).then((u) => {
-            if (u.ok) setAudioUrl(u.url);
-            else setAudioUrl("");
-        });
-    }, [activeAudio]);
 
     useEffect(() => {
         window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
@@ -244,22 +280,40 @@ export default function App() {
         return res.dir;
     }
 
-    async function handleStart() {
+    async function start() {
         if (audios.length === 0) return;
 
-        const isBatch = audios.length > 1;
+        let batch = audios;
+        if (activeAudio && audios.length === 1) batch = [activeAudio];
 
-        if (isBatch && !outputDir) {
-            const chosenDir = await chooseOutputDir();
-            if (!chosenDir) return;
+        if (batch.length > 1 && !outputDir) {
+            const dir = await chooseOutputDir();
+            if (!dir) return;
         }
 
-        if (!isBatch && !outputPath && !outputDir) {
+        if (batch.length === 1 && !outputPath && !outputDir) {
             const chosen = await chooseOutput();
             if (!chosen) return;
         }
 
-        await start();
+        setBusy(true);
+        setPreview([]);
+        setStep("PREPARING");
+        setMessage(batch.length > 1 ? `Iniciando lote (${batch.length} arquivos)...` : "Iniciando...");
+
+        const [first, ...rest] = batch;
+        const started = await window.api.startJob({
+            audioPath: first.path,
+            outputPath: outputPath || undefined,
+            outputDir: outputDir || undefined,
+            language,
+            modelId,
+            format,
+            granularity,
+            assKaraoke
+        });
+        setCurrentJobId(started.jobId);
+        setBatchQueue(rest.map((x) => x.path));
     }
 
     // Ações por item
@@ -358,6 +412,16 @@ export default function App() {
         await window.api.windowClose();
     }
 
+    async function cancelCurrentJob() {
+        if (!currentJobId) return;
+        await window.api.cancelJob({ jobId: currentJobId });
+        setBusy(false);
+        setCurrentJobId("");
+        setBatchQueue([]);
+        setStep("IDLE");
+        setMessage("Processamento cancelado pelo usuário.");
+    }
+
     function msToClock(ms: number) {
         const total = Math.max(0, Math.floor(ms / 1000));
         const h = Math.floor(total / 3600);
@@ -374,6 +438,15 @@ export default function App() {
         const lines = preview.map((p) => `[${msToClock(p.startMs)} - ${msToClock(p.endMs)}] ${p.text}`);
         await navigator.clipboard.writeText(lines.join("\n"));
     }
+
+    const progressPercent = useMemo(() => {
+        if (step === "DONE") return 100;
+        if (step === "SAVING") return 95;
+        if (step === "CONVERTING") return 82;
+        if (step === "TRANSCRIBING") return 58;
+        if (step === "PREPARING") return 18;
+        return 0;
+    }, [step]);
 
     return (
         <div style={styles.page} data-theme={darkMode ? "dark" : "light"}>
@@ -529,7 +602,7 @@ export default function App() {
                     <section style={styles.section}>
                         <div style={{ display: "flex", gap: 8 }}>
                         <button
-                            onClick={handleStart}
+                            onClick={start}
                             disabled={audios.length === 0 || busy} // UX: permite clique mesmo sem outputPath (abre dialog)
                             style={styles.primaryBtn}
                             title={disabledReason}
