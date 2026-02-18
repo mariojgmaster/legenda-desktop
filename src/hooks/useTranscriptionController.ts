@@ -33,6 +33,8 @@ export function useTranscriptionController(opts: ControllerOptions) {
     const [preview, setPreview] = useState<PreviewItem[]>([]);
 
     const optionsRef = useRef(opts);
+    const queueRef = useRef<string[]>([]);
+
     useEffect(() => {
         optionsRef.current = opts;
     }, [opts]);
@@ -41,6 +43,11 @@ export function useTranscriptionController(opts: ControllerOptions) {
         if (opts.audios.length === 0) return null;
         return opts.audios.find((a) => a.path === opts.activeAudioPath) || opts.audios[0];
     }, [opts.audios, opts.activeAudioPath]);
+
+    const updateQueue = useCallback((next: string[]) => {
+        queueRef.current = next;
+        setBatchQueue(next);
+    }, []);
 
     const buildJobReq = useCallback((audioPath: string, overrides?: StartOverrides) => {
         const current = optionsRef.current;
@@ -58,7 +65,9 @@ export function useTranscriptionController(opts: ControllerOptions) {
 
     const runNextFromQueue = useCallback(async () => {
         const current = optionsRef.current;
-        if (batchQueue.length === 0) {
+        const [nextPath, ...rest] = queueRef.current;
+
+        if (!nextPath) {
             setBusy(false);
             setCurrentJobId("");
             setStep("DONE");
@@ -66,8 +75,7 @@ export function useTranscriptionController(opts: ControllerOptions) {
             return;
         }
 
-        const [nextPath, ...rest] = batchQueue;
-        setBatchQueue(rest);
+        updateQueue(rest);
 
         const nextAudio = current.audios.find((a) => a.path === nextPath);
         if (!nextAudio) {
@@ -78,7 +86,7 @@ export function useTranscriptionController(opts: ControllerOptions) {
         setMessage(`Processando próximo arquivo (${rest.length + 1} restante)...`);
         const started = await window.api.startJob(buildJobReq(nextAudio.path));
         setCurrentJobId(started.jobId);
-    }, [batchQueue, buildJobReq]);
+    }, [buildJobReq, updateQueue]);
 
     useEffect(() => {
         const off1 = window.api.onJobProgress((e) => {
@@ -95,7 +103,7 @@ export function useTranscriptionController(opts: ControllerOptions) {
         const off3 = window.api.onJobError((e) => {
             setBusy(false);
             setCurrentJobId("");
-            setBatchQueue([]);
+            updateQueue([]);
             setStep("ERROR");
             setMessage(e.error.message || "Erro.");
         });
@@ -105,7 +113,7 @@ export function useTranscriptionController(opts: ControllerOptions) {
             off2();
             off3();
         };
-    }, [runNextFromQueue]);
+    }, [runNextFromQueue, updateQueue]);
 
     const start = useCallback(async (overrides?: StartOverrides) => {
         const current = optionsRef.current;
@@ -120,20 +128,21 @@ export function useTranscriptionController(opts: ControllerOptions) {
         setMessage(batch.length > 1 ? `Iniciando lote (${batch.length} arquivos)...` : "Iniciando...");
 
         const [first, ...rest] = batch;
+        updateQueue(rest.map((x) => x.path));
+
         const started = await window.api.startJob(buildJobReq(first.path, overrides));
         setCurrentJobId(started.jobId);
-        setBatchQueue(rest.map((x) => x.path));
-    }, [buildJobReq]);
+    }, [buildJobReq, updateQueue]);
 
     const cancelCurrentJob = useCallback(async () => {
         if (!currentJobId) return;
         await window.api.cancelJob({ jobId: currentJobId });
         setBusy(false);
         setCurrentJobId("");
-        setBatchQueue([]);
+        updateQueue([]);
         setStep("IDLE");
         setMessage("Processamento cancelado pelo usuário.");
-    }, [currentJobId]);
+    }, [currentJobId, updateQueue]);
 
     const progressPercent = useMemo(() => {
         if (step === "DONE") return 100;
@@ -157,8 +166,7 @@ export function useTranscriptionController(opts: ControllerOptions) {
         setStep,
         setPreview,
         start,
-        cancelCurrentJob,
-        setBatchQueue
+        cancelCurrentJob
     };
 }
 

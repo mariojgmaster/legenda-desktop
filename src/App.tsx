@@ -197,12 +197,6 @@ export default function App() {
     }, [activeAudio]);
 
     useEffect(() => {
-        const onResize = () => setViewportWidth(window.innerWidth);
-        window.addEventListener("resize", onResize);
-        return () => window.removeEventListener("resize", onResize);
-    }, []);
-
-    useEffect(() => {
         window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
     }, [darkMode]);
 
@@ -371,11 +365,6 @@ export default function App() {
         if (selectedId === id) setSelectedId("");
         await refreshGenerated();
     }
-
-    const stepIndex = useMemo(() => {
-        const idx = STEPS.findIndex((s) => s.key === step);
-        return idx;
-    }, [step]);
 
     function flowColors(state: "idle" | "current" | "done" | "error") {
         if (state === "idle") {
