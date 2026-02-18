@@ -1,27 +1,13 @@
 :root {
 	color-scheme: light;
-	--app-shell-bg: radial-gradient(circle at 12% -8%, #dbeafe 0%, #eff6ff 28%, #f5f9ff 56%, #f8fafc 100%);
 	--app-content-bg: #f8fafc;
 	--card-bg: #ffffff;
-	--card-border: #dbe3f0;
+	--card-border: #d9e2f2;
 	--text-primary: #0f172a;
 	--text-secondary: #475569;
-	--text-muted: #64748b;
 	--input-bg: #ffffff;
-	--input-border: #cfd8e6;
+	--input-border: #d5dceb;
 	--btn-secondary-bg: #ffffff;
-	--btn-secondary-border: #cfd8e6;
-	--btn-secondary-hover: #f1f5f9;
-	--surface-shadow: 0 14px 36px rgba(15, 23, 42, 0.08);
-	--topbar-bg: linear-gradient(110deg, #f8fbff 0%, #eaf2ff 50%, #dde9ff 100%);
-	--topbar-border: rgba(37, 99, 235, 0.16);
-	--topbar-text: #0f172a;
-	--topbar-control-bg: rgba(15, 23, 42, 0.05);
-	--topbar-control-border: rgba(15, 23, 42, 0.14);
-	--topbar-control-text: #0f172a;
-	--topbar-dot: #2563eb;
-	--topbar-dot-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
-	--focus-ring: rgba(37, 99, 235, 0.18);
 }
 
 * {
@@ -38,7 +24,7 @@ body,
 body {
 	margin: 0;
 	font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-	background: var(--app-shell-bg);
+	background: radial-gradient(circle at 10% 0%, #1f2b45 0%, #0f172a 30%, #0b1220 100%);
 	color: var(--text-primary);
 	overflow: hidden;
 }
@@ -50,7 +36,7 @@ input {
 }
 
 button {
-	border: 1px solid var(--btn-secondary-border);
+	border: 1px solid var(--input-border);
 	background: var(--btn-secondary-bg);
 	color: var(--text-primary);
 	padding: 8px 12px;
@@ -60,10 +46,9 @@ button {
 }
 
 button:hover:not(:disabled) {
-	border-color: #a8b7d1;
-	background: var(--btn-secondary-hover);
+	border-color: #b9c4dd;
 	transform: translateY(-1px);
-	box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+	box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
 }
 
 button:active:not(:disabled) {
@@ -71,7 +56,7 @@ button:active:not(:disabled) {
 }
 
 button:disabled {
-	opacity: 0.55;
+	opacity: 0.6;
 	cursor: not-allowed;
 }
 
@@ -83,36 +68,26 @@ input {
 	border: 1px solid var(--input-border);
 	background: var(--input-bg);
 	color: var(--text-primary);
-	transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+	transition: border-color 0.16s ease, box-shadow 0.16s ease;
 }
 
 input:focus,
 select:focus {
 	outline: none;
 	border-color: #2563eb;
-	box-shadow: 0 0 0 3px var(--focus-ring);
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
 .window-topbar {
-	height: 52px;
+	height: 48px;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	padding: 0 12px 0 14px;
-	background: var(--topbar-bg);
-	color: var(--topbar-text);
-	border-bottom: 1px solid var(--topbar-border);
-	backdrop-filter: blur(10px);
+	padding: 0 10px 0 14px;
+	background: linear-gradient(90deg, #111a30 0%, #1c2745 70%, #263257 100%);
+	color: #e8ecf6;
 	-webkit-app-region: drag;
 	user-select: none;
-	position: sticky;
-	top: 0;
-	z-index: 20;
-}
-
-.window-topbar.is-busy {
-	background-size: 180% 180%;
-	animation: topbarShift 4s ease infinite;
 }
 
 .window-brand {
@@ -127,26 +102,16 @@ select:focus {
 	width: 10px;
 	height: 10px;
 	border-radius: 999px;
-	background: var(--topbar-dot);
-	box-shadow: var(--topbar-dot-shadow);
+	background: #7dd3fc;
+	box-shadow: 0 0 12px rgba(125, 211, 252, 0.8);
 }
 
 .window-subtitle {
 	font-size: 12px;
-	opacity: 0.76;
+	opacity: 0.75;
 	white-space: nowrap;
 	text-overflow: ellipsis;
 	overflow: hidden;
-}
-
-.window-status-chip {
-	padding: 4px 9px;
-	border-radius: 999px;
-	font-size: 11px;
-	font-weight: 600;
-	background: rgba(37, 99, 235, 0.12);
-	color: #1d4ed8;
-	border: 1px solid rgba(37, 99, 235, 0.2);
 }
 
 .window-controls {
@@ -161,26 +126,26 @@ select:focus {
 
 .window-control-btn,
 .theme-toggle-btn {
-	height: 30px;
+	height: 28px;
 	border-radius: 8px;
-	background: var(--topbar-control-bg);
-	border: 1px solid var(--topbar-control-border);
-	color: var(--topbar-control-text);
+	background: rgba(255, 255, 255, 0.12);
+	border: 1px solid rgba(255, 255, 255, 0.2);
+	color: #f8fafc;
 }
 
 .window-control-btn {
-	width: 34px;
+	width: 32px;
 	padding: 0;
 }
 
 .theme-toggle-btn {
-	min-width: 44px;
+	min-width: 42px;
 	padding: 0 10px;
 }
 
 .window-control-btn:hover:not(:disabled),
 .theme-toggle-btn:hover:not(:disabled) {
-	background: rgba(37, 99, 235, 0.13);
+	background: rgba(255, 255, 255, 0.22);
 	box-shadow: none;
 	transform: none;
 }
@@ -188,38 +153,34 @@ select:focus {
 .window-control-btn.close:hover:not(:disabled) {
 	background: #ef4444;
 	border-color: #ef4444;
-	color: #fff;
 }
 
 [data-theme="dark"] {
-	--app-shell-bg: radial-gradient(circle at 12% -8%, #1e293b 0%, #0f172a 32%, #0b1220 68%, #070d18 100%);
-	--app-content-bg: #0b1220;
-	--card-bg: #0f172a;
-	--card-border: #2a3a52;
+	--app-content-bg: #0f172a;
+	--card-bg: #111827;
+	--card-border: #334155;
 	--text-primary: #e2e8f0;
 	--text-secondary: #94a3b8;
-	--text-muted: #7c90ac;
-	--input-bg: #0a1323;
-	--input-border: #32455f;
-	--btn-secondary-bg: #0d1a2f;
-	--btn-secondary-border: #334a67;
-	--btn-secondary-hover: #12223b;
-	--surface-shadow: 0 16px 34px rgba(2, 6, 23, 0.52);
-	--topbar-bg: linear-gradient(110deg, #0b1324 0%, #101b33 45%, #1a2a47 100%);
-	--topbar-border: rgba(96, 165, 250, 0.2);
-	--topbar-text: #e2e8f0;
-	--topbar-control-bg: rgba(255, 255, 255, 0.06);
-	--topbar-control-border: rgba(255, 255, 255, 0.2);
-	--topbar-control-text: #e2e8f0;
-	--topbar-dot: #60a5fa;
-	--topbar-dot-shadow: 0 0 12px rgba(96, 165, 250, 0.65);
-	--focus-ring: rgba(96, 165, 250, 0.22);
+	--input-bg: #0b1220;
+	--input-border: #334155;
+	--btn-secondary-bg: #0b1220;
 }
 
-[data-theme="dark"] .window-status-chip {
-	background: rgba(96, 165, 250, 0.16);
-	color: #bfdbfe;
-	border-color: rgba(96, 165, 250, 0.32);
+[data-theme="light"] .window-topbar {
+	background: linear-gradient(90deg, #eff6ff 0%, #dbeafe 100%);
+	color: #0f172a;
+}
+
+[data-theme="light"] .window-control-btn,
+[data-theme="light"] .theme-toggle-btn {
+	background: rgba(15, 23, 42, 0.04);
+	border-color: rgba(15, 23, 42, 0.14);
+	color: #0f172a;
+}
+
+[data-theme="light"] .window-dot {
+	background: #2563eb;
+	box-shadow: 0 0 10px rgba(37, 99, 235, 0.35);
 }
 
 .app-card {
@@ -229,7 +190,7 @@ select:focus {
 
 .app-card:hover {
 	transform: translateY(-1px);
-	box-shadow: var(--surface-shadow);
+	box-shadow: 0 12px 26px rgba(15, 23, 42, 0.09);
 }
 
 @keyframes fadeUp {
@@ -243,18 +204,8 @@ select:focus {
 	}
 }
 
-@keyframes topbarShift {
-	0% { background-position: 0% 50%; }
-	50% { background-position: 100% 50%; }
-	100% { background-position: 0% 50%; }
-}
-
 @media (max-width: 900px) {
 	.window-subtitle {
-		display: none;
-	}
-
-	.window-status-chip {
 		display: none;
 	}
 }

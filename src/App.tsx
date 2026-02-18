@@ -450,12 +450,11 @@ export default function App() {
 
     return (
         <div style={styles.page} data-theme={darkMode ? "dark" : "light"}>
-            <header className={`window-topbar ${busy ? "is-busy" : ""}`}>
+            <header className="window-topbar">
                 <div className="window-brand">
                     <span className="window-dot" />
                     <strong>Legenda Desktop</strong>
                     <span className="window-subtitle">Transcrição profissional</span>
-                    <span className="window-status-chip">{busy ? `Processando${batchQueue.length > 0 ? ` (${batchQueue.length + 1} na fila)` : ""}` : "Pronto"}</span>
                 </div>
 
                 <div className="window-controls no-drag">
@@ -943,7 +942,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: 0,
         width: "100%",
         minHeight: "100vh",
-        overflow: "hidden"
+        overflow: "visible"
     },
     contentWrap: {
         background: "var(--app-content-bg)",
@@ -951,7 +950,7 @@ const styles: Record<string, React.CSSProperties> = {
         border: "1px solid rgba(226,232,240,0.8)",
         borderTop: "none",
         padding: 18,
-        boxShadow: "var(--surface-shadow)",
+        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.26)",
         minHeight: "calc(100vh - 48px)",
         overflowY: "auto",
         overflowX: "hidden"
