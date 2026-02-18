@@ -43,8 +43,7 @@ export default function App() {
         );
     }
 
-    const [audios, setAudios] = useState<{ path: string; name: string }[]>([]);
-    const [activeAudioPath, setActiveAudioPath] = useState<string>("");
+    const [audio, setAudio] = useState<{ path: string; name: string } | null>(null);
 
     const [language, setLanguage] = useState<LanguageCode>("pt");
     const [modelId, setModelId] = useState<ModelId>("small");
@@ -52,7 +51,6 @@ export default function App() {
     const [assKaraoke, setAssKaraoke] = useState(false);
 
     const [outputPath, setOutputPath] = useState<string>("");
-    const [outputDir, setOutputDir] = useState<string>("");
     const [busy, setBusy] = useState(false);
 
     const [step, setStep] = useState<StepKey>("IDLE");
@@ -77,7 +75,6 @@ export default function App() {
     const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
     const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("legenda:dark") !== "0");
     const [currentJobId, setCurrentJobId] = useState<string>("");
-    const [batchQueue, setBatchQueue] = useState<string[]>([]);
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -93,21 +90,16 @@ export default function App() {
 
     const selected = useMemo(() => generated.find((g) => g.id === selectedId) || null, [generated, selectedId]);
 
-    const activeAudio = useMemo(() => {
-        if (audios.length === 0) return null;
-        return audios.find((a) => a.path === activeAudioPath) || audios[0];
-    }, [audios, activeAudioPath]);
-
-    const canChooseOutput = !!activeAudio && !busy;
-    const canGenerate = audios.length > 0 && (!!outputPath || !!outputDir) && !busy;
+    const canChooseOutput = !!audio && !busy;
+    const canGenerate = !!audio && !!outputPath && !busy;
     const isCompactLayout = viewportWidth < 1100;
 
     const disabledReason = useMemo(() => {
         if (busy) return "Processando...";
-        if (!activeAudio) return "Selecione um áudio";
-        if (!outputPath && !outputDir) return "Escolha onde salvar";
+        if (!audio) return "Selecione um áudio";
+        if (!outputPath) return "Escolha onde salvar";
         return "";
-    }, [busy, activeAudio, outputPath, outputDir]);
+    }, [busy, audio, outputPath]);
 
     async function refreshGenerated(selectId?: string) {
         const res = await window.api.listGeneratedFiles();
@@ -126,42 +118,18 @@ export default function App() {
             setMessage(e.message || "");
         });
 
-        const off2 = window.api.onJobDone(async (e) => {
-            setPreview(e.preview.map((p) => ({ index: p.index, startMs: p.startMs, endMs: p.endMs, text: p.text })));
-            refreshGenerated(e.generated.id);
-
-            if (batchQueue.length > 0) {
-                const [nextPath, ...rest] = batchQueue;
-                setBatchQueue(rest);
-                const nextAudio = audios.find((a) => a.path === nextPath);
-                if (nextAudio) {
-                    setActiveAudioPath(nextAudio.path);
-                    setMessage(`Processando próximo arquivo (${rest.length + 1} restante)...`);
-                    const started = await window.api.startJob({
-                        audioPath: nextAudio.path,
-                        outputPath: outputPath || undefined,
-                        outputDir: outputDir || undefined,
-                        language,
-                        modelId,
-                        format,
-                        granularity,
-                        assKaraoke
-                    });
-                    setCurrentJobId(started.jobId);
-                    return;
-                }
-            }
-
+        const off2 = window.api.onJobDone((e) => {
             setBusy(false);
             setCurrentJobId("");
             setStep("DONE");
             setMessage("Concluído.");
+            setPreview(e.preview.map((p) => ({ index: p.index, startMs: p.startMs, endMs: p.endMs, text: p.text })));
+            refreshGenerated(e.generated.id);
         });
 
         const off3 = window.api.onJobError((e) => {
             setBusy(false);
             setCurrentJobId("");
-            setBatchQueue([]);
             setStep("ERROR");
             setMessage(e.error.message || "Erro.");
         });
@@ -174,7 +142,8 @@ export default function App() {
             off3();
             off4();
         };
-    }, [audios, batchQueue, outputPath, outputDir, language, modelId, format, granularity, assKaraoke]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     useEffect(() => {
         const onResize = () => setViewportWidth(window.innerWidth);
@@ -184,20 +153,7 @@ export default function App() {
 
     useEffect(() => {
         window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
-        window.api.setTheme(darkMode ? "dark" : "light");
     }, [darkMode]);
-
-    useEffect(() => {
-        if (!activeAudio) {
-            setAudioUrl("");
-            return;
-        }
-
-        window.api.getFileUrl(activeAudio.path).then((u) => {
-            if (u.ok) setAudioUrl(u.url);
-            else setAudioUrl("");
-        });
-    }, [activeAudio]);
 
     useEffect(() => {
         if (!menu) return;
@@ -236,10 +192,8 @@ export default function App() {
     async function pickAudio() {
         const res = await window.api.pickAudio();
         if (!res.ok) return;
-        setAudios([res.file]);
-        setActiveAudioPath(res.file.path);
+        setAudio(res.file);
         setOutputPath("");
-        setOutputDir("");
         setPreview([]);
         setStep("IDLE");
         setMessage(`Selecionado: ${res.file.name}`);
@@ -249,63 +203,35 @@ export default function App() {
         else setAudioUrl("");
     }
 
-    async function addAudios() {
-        const res = await window.api.pickAudios();
-        if (!res.ok) return;
-        setAudios((prev) => {
-            const map = new Map(prev.map((a) => [a.path, a]));
-            for (const f of res.files) map.set(f.path, f);
-            return Array.from(map.values());
-        });
-        if (!activeAudioPath && res.files[0]) setActiveAudioPath(res.files[0].path);
-        setOutputPath("");
-        setMessage(`${res.files.length} arquivo(s) adicionados para processamento em lote.`);
-    }
-
     async function chooseOutput() {
-        if (!activeAudio) return null;
-        const suggestedBaseName = baseNameFromFile(activeAudio.name);
+        if (!audio) return null;
+        const suggestedBaseName = baseNameFromFile(audio.name);
         const res = await window.api.chooseOutputPath({ suggestedBaseName, format });
         if (!res.ok) return null;
         setOutputPath(res.path);
-        setOutputDir("");
         return res.path;
     }
 
-    async function chooseOutputDir() {
-        const res = await window.api.chooseOutputDir();
-        if (!res.ok) return null;
-        setOutputDir(res.dir);
-        setOutputPath("");
-        return res.dir;
-    }
-
     async function start() {
-        if (audios.length === 0) return;
+        if (!audio) return;
 
-        let batch = audios;
-        if (activeAudio && audios.length === 1) batch = [activeAudio];
+        let finalOutputPath = outputPath;
 
-        if (batch.length > 1 && !outputDir) {
-            const dir = await chooseOutputDir();
-            if (!dir) return;
-        }
-
-        if (batch.length === 1 && !outputPath && !outputDir) {
+        // UX: ao clicar gerar sem outputPath, escolhe destino e já inicia automaticamente
+        if (!finalOutputPath) {
             const chosen = await chooseOutput();
             if (!chosen) return;
+            finalOutputPath = chosen;
         }
 
         setBusy(true);
         setPreview([]);
         setStep("PREPARING");
-        setMessage(batch.length > 1 ? `Iniciando lote (${batch.length} arquivos)...` : "Iniciando...");
+        setMessage("Iniciando...");
 
-        const [first, ...rest] = batch;
         const started = await window.api.startJob({
-            audioPath: first.path,
-            outputPath: outputPath || undefined,
-            outputDir: outputDir || undefined,
+            audioPath: audio.path,
+            outputPath: finalOutputPath,
             language,
             modelId,
             format,
@@ -313,7 +239,6 @@ export default function App() {
             assKaraoke
         });
         setCurrentJobId(started.jobId);
-        setBatchQueue(rest.map((x) => x.path));
     }
 
     // Ações por item
@@ -417,7 +342,6 @@ export default function App() {
         await window.api.cancelJob({ jobId: currentJobId });
         setBusy(false);
         setCurrentJobId("");
-        setBatchQueue([]);
         setStep("IDLE");
         setMessage("Processamento cancelado pelo usuário.");
     }
@@ -489,20 +413,9 @@ export default function App() {
                             <button onClick={pickAudio} disabled={busy}>
                                 Selecionar áudio
                             </button>
-                            <button onClick={addAudios} disabled={busy}>Adicionar em lote</button>
-                            <div style={{ color: "#444" }}>{activeAudio ? `${activeAudio.name}${audios.length > 1 ? ` (+${audios.length - 1})` : ""}` : "Nenhum arquivo selecionado"}</div>
+                            <div style={{ color: "#444" }}>{audio ? audio.name : "Nenhum arquivo selecionado"}</div>
                         </div>
-                        {audios.length > 1 && (
-                            <div style={{ marginTop: 10 }}>
-                                <div style={styles.mini}>Arquivo ativo no lote</div>
-                                <select value={activeAudio?.path || ""} onChange={(e) => setActiveAudioPath(e.target.value)} disabled={busy}>
-                                    {audios.map((a) => (
-                                        <option key={a.path} value={a.path}>{a.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        )}
-                        {activeAudio && audioUrl && (
+                        {audio && audioUrl && (
                             <div style={{ marginTop: 10 }}>
                                 <audio controls src={audioUrl} style={{ width: "100%" }} />
                             </div>
@@ -562,7 +475,7 @@ export default function App() {
                                 </div>
                             )}
 
-                            {activeAudio && audioUrl && (
+                            {audio && audioUrl && (
                                 <div>
                                     {/* <label className="text-sm opacity-80">Granularidade</label> */}
                                     <div style={styles.mini}>Granularidade</div>
@@ -582,17 +495,10 @@ export default function App() {
 
                             <div>
                                 <div style={styles.mini}>Salvar como</div>
-                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                    <button onClick={chooseOutput} disabled={!canChooseOutput || audios.length > 1}>
-                                        Escolher arquivo de saída…
-                                    </button>
-                                    <button onClick={chooseOutputDir} disabled={!canChooseOutput}>
-                                        Escolher pasta de saída…
-                                    </button>
-                                </div>
-                                <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>
-                                    {outputDir ? `Pasta: ${outputDir}` : outputPath ? outputPath : "Nenhum local escolhido ainda."}
-                                </div>
+                                <button onClick={chooseOutput} disabled={!canChooseOutput}>
+                                    Escolher onde salvar…
+                                </button>
+                                <div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>{outputPath ? outputPath : "Nenhum local escolhido ainda."}</div>
                             </div>
                         </div>
                     </section>
@@ -602,7 +508,7 @@ export default function App() {
                         <div style={{ display: "flex", gap: 8 }}>
                         <button
                             onClick={start}
-                            disabled={audios.length === 0 || busy} // UX: permite clique mesmo sem outputPath (abre dialog)
+                            disabled={!audio || busy} // UX: permite clique mesmo sem outputPath (abre dialog)
                             style={styles.primaryBtn}
                             title={disabledReason}
                         >
@@ -615,7 +521,7 @@ export default function App() {
 
                         {!canGenerate && (
                             <div style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
-                                {busy ? "Processando..." : audios.length > 0 ? "Ao clicar, você escolherá onde salvar/pasta se ainda não escolheu." : "Selecione ao menos um áudio para continuar."}
+                                {busy ? "Processando..." : audio ? "Ao clicar, você escolherá onde salvar se ainda não escolheu." : "Selecione um áudio para continuar."}
                             </div>
                         )}
                     </section>
@@ -672,7 +578,7 @@ export default function App() {
                             <div style={{ marginTop: 10, height: 10, background: "#e8edf7", borderRadius: 999, overflow: "hidden" }}>
                                 <div style={{ ...styles.progressBar, width: `${progressPercent}%` }} />
                             </div>
-                            <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-secondary)" }}>{progressPercent}%</div>
+                            <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>{progressPercent}%</div>
                         </div>
                     </section>
 
@@ -687,7 +593,7 @@ export default function App() {
                             <div style={{ marginTop: 8, maxHeight: 260, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
                                 {preview.map((p) => (
                                     <div key={p.index} style={{ padding: 10, borderBottom: "1px solid #eef2f7", display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "150px 1fr auto", gap: 8, alignItems: "start" }}>
-                                        <div style={{ fontSize: 12, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                                        <div style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
                                             {msToClock(p.startMs)} → {msToClock(p.endMs)}
                                         </div>
                                         <div style={{ fontSize: 13, lineHeight: 1.4 }}>{p.text}</div>
@@ -942,10 +848,10 @@ const styles: Record<string, React.CSSProperties> = {
         padding: 0,
         width: "100%",
         minHeight: "100vh",
-        overflow: "visible"
+        overflow: "hidden"
     },
     contentWrap: {
-        background: "var(--app-content-bg)",
+        background: "#f8fafc",
         borderRadius: "0 0 14px 14px",
         border: "1px solid rgba(226,232,240,0.8)",
         borderTop: "none",
@@ -955,8 +861,8 @@ const styles: Record<string, React.CSSProperties> = {
         overflowY: "auto",
         overflowX: "hidden"
     },
-    h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "var(--text-primary)" },
-    subheading: { margin: "8px 0 16px", fontSize: 13, color: "var(--text-secondary)" },
+    h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "#0f172a" },
+    subheading: { margin: "8px 0 16px", fontSize: 13, color: "#475569" },
     grid2: {
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
@@ -964,16 +870,16 @@ const styles: Record<string, React.CSSProperties> = {
         alignItems: "start"
     },
     card: {
-        border: "1px solid var(--card-border)",
+        border: "1px solid #d9e2f2",
         borderRadius: 14,
         padding: 16,
-        background: "var(--card-bg)",
+        background: "#fff",
         boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)"
     },
-    h2: { margin: 0, fontSize: 16, color: "var(--text-primary)" },
+    h2: { margin: 0, fontSize: 16, color: "#0f172a" },
     section: { marginTop: 12 },
-    label: { fontWeight: 800, marginBottom: 6, color: "var(--text-primary)" },
-    mini: { fontSize: 12, color: "var(--text-secondary)", marginBottom: 6 },
+    label: { fontWeight: 800, marginBottom: 6, color: "#1e293b" },
+    mini: { fontSize: 12, color: "#64748b", marginBottom: 6 },
     gridOptions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
     pillOn: {
         padding: "7px 10px",
@@ -986,7 +892,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: "7px 10px",
         borderRadius: 999,
         border: "1px solid #eee",
-        background: "var(--card-bg)",
+        background: "#fff",
         cursor: "pointer"
     },
     primaryBtn: {
@@ -1017,7 +923,7 @@ const styles: Record<string, React.CSSProperties> = {
     modal: {
         width: 520,
         maxWidth: "100%",
-        background: "var(--card-bg)",
+        background: "#fff",
         borderRadius: 14,
         border: "1px solid #e6e6e6",
         padding: 14
@@ -1033,7 +939,7 @@ const styles: Record<string, React.CSSProperties> = {
         height: 34,
         borderRadius: 10,
         border: "1px solid #e6e6e6",
-        background: "var(--card-bg)",
+        background: "#fff",
         cursor: "pointer",
         display: "grid",
         placeItems: "center",
@@ -1046,7 +952,7 @@ const styles: Record<string, React.CSSProperties> = {
         top: 38,
         right: 0,
         width: 180,
-        background: "var(--card-bg)",
+        background: "#fff",
         border: "1px solid #e6e6e6",
         borderRadius: 12,
         padding: 6,
@@ -1082,8 +988,8 @@ const styles: Record<string, React.CSSProperties> = {
     },
     menuPanel: {
         position: "fixed",
-        background: "var(--card-bg)",
-        border: "1px solid var(--card-border)",
+        background: "#fff",
+        border: "1px solid #d9e2f2",
         borderRadius: 12,
         padding: 6,
         boxShadow: "0 12px 30px rgba(0,0,0,0.08)"
