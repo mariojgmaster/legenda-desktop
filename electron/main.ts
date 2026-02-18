@@ -61,6 +61,12 @@ function createTray() {
     tray.on("double-click", () => showMainWindow());
 }
 
+function safeFallbackHtml(title: string, message: string) {
+    const escapedMessage = message.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    return `data:text/html,<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"/><title>${title}</title><style>body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:#0b1220;color:#e2e8f0;display:grid;place-items:center;min-height:100vh;padding:20px}.card{max-width:760px;background:#111827;border:1px solid #334155;border-radius:14px;padding:18px}h1{margin:0 0 10px;font-size:22px}p{margin:8px 0;line-height:1.5;color:#cbd5e1}pre{white-space:pre-wrap;background:#0f172a;padding:10px;border-radius:10px;border:1px solid #334155}</style></head><body><div class="card"><h1>${title}</h1><p>O app encontrou um problema ao iniciar, mas você pode tentar novamente.</p><pre>${escapedMessage}</pre></div></body></html>`;
+}
+
+
 function registerAppFileProtocol() {
     protocol.handle("appfile", async (request: Request) => {
         try {
