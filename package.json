@@ -7,7 +7,8 @@
 		"dev": "concurrently -k \"vite\" \"wait-on http://127.0.0.1:5173 && npm run electron:dev\"",
 		"electron:dev": "npm run electron:build && electron .",
 		"electron:build": "tsc -p tsconfig.electron.json",
-		"build": "vite build && npm run electron:build"
+		"build": "vite build && npm run electron:build",
+		"dist:win": "npm run build && electron-builder --win"
 	},
 	"dependencies": {
 		"react": "^18.3.1",
@@ -21,10 +22,42 @@
 		"@vitejs/plugin-react": "^4.3.4",
 		"concurrently": "^9.1.0",
 		"electron": "^32.2.0",
+		"electron-builder": "^26.4.0",
 		"eslint": "^9.18.0",
 		"prettier": "^3.4.2",
 		"typescript": "^5.7.2",
 		"vite": "^6.0.6",
 		"wait-on": "^8.0.1"
+	},
+	"build": {
+		"appId": "com.mjapps.legendadesktop",
+		"productName": "Legenda Desktop App",
+		"asar": true,
+		"directories": {
+			"output": "release"
+		},
+		"files": [
+			"dist/**",
+			"dist-electron/**"
+		],
+		"extraResources": [
+			{
+				"from": "electron/assets/whisper/win",
+				"to": "whisper/win"
+			},
+			{
+				"from": "electron/assets/models",
+				"to": "models"
+			}
+		],
+		"win": {
+			"target": "nsis"
+		},
+		"nsis": {
+			"oneClick": false,
+			"allowToChangeInstallationDirectory": true,
+			"createDesktopShortcut": true,
+			"createStartMenuShortcut": true
+		}
 	}
 }

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { GeneratedFileDTO, GranularityPreset, LanguageCode, ModelId, SubtitleFormat } from "../shared/ipc/dtos";
+import type { SegmentPreviewDTO } from "../shared/ipc/dtos";
 
 import "./App.css";
 
@@ -29,7 +30,7 @@ export default function App() {
     if (!window.api) {
         return (
             <div style={styles.page}>
-                <h1 style={{ margin: "4px 0 14px" }}>Legenda (MVP)</h1>
+                <h1 style={{ margin: "4px 0 14px" }}>Legenda Desktop</h1>
                 <div style={styles.card}>
                     <h2 style={styles.h2}>Inicializando integração…</h2>
                     <p style={{ marginTop: 8, color: "#555", lineHeight: 1.4 }}>
@@ -48,6 +49,7 @@ export default function App() {
     const [language, setLanguage] = useState<LanguageCode>("pt");
     const [modelId, setModelId] = useState<ModelId>("small");
     const [format, setFormat] = useState<SubtitleFormat>("srt");
+    const [assKaraoke, setAssKaraoke] = useState(false);
 
     const [outputPath, setOutputPath] = useState<string>("");
     const [busy, setBusy] = useState(false);
@@ -55,11 +57,60 @@ export default function App() {
     const [step, setStep] = useState<StepKey>("IDLE");
     const [message, setMessage] = useState<string>("");
 
-    const [preview, setPreview] = useState<{ index: number; text: string }[]>([]);
+    const [preview, setPreview] = useState<{ index: number; startMs: number; endMs: number; text: string }[]>([]);
     const [generated, setGenerated] = useState<GeneratedFileDTO[]>([]);
     const [selectedId, setSelectedId] = useState<string>("");
 
     const [granularity, setGranularity] = useState<GranularityPreset>("MEDIUM");
+
+    const [hoveredCueIndex, setHoveredCueIndex] = useState<number | null>(null);
+
+    const [previewMeta, setPreviewMeta] = useState<{ granularity: GranularityPreset } | null>(null);
+
+
+    async function copyToClipboard(text: string) {
+        try {
+            await navigator.clipboard.writeText(text);
+            return true;
+        } catch {
+            // fallback simples
+            try {
+                const ta = document.createElement("textarea");
+                ta.value = text;
+                ta.style.position = "fixed";
+                ta.style.left = "-9999px";
+                ta.style.top = "-9999px";
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                const ok = document.execCommand("copy");
+                document.body.removeChild(ta);
+                return ok;
+            } catch {
+                return false;
+            }
+        }
+    }
+
+    function buildPreviewBlockText(cues: typeof preview) {
+        // Formato simples e útil para colar em editor/chat:
+        // mm:ss --> mm:ss
+        // texto
+        return cues
+            .map((c) => `${formatMs(c.startMs)} --> ${formatMs(c.endMs)}\n${c.text}`)
+            .join("\n\n");
+    }
+
+    function CopyIcon({ size = 16 }: { size?: number }) {
+        return (
+            <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                    d="M16 1H6a2 2 0 0 0-2 2v12h2V3h10V1zm3 4H10a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H10V7h9v14z"
+                    fill="currentColor"
+                />
+            </svg>
+        );
+    }
 
     const MENU_W = 200;
     const MENU_PAD = 10;
@@ -70,6 +121,10 @@ export default function App() {
     } | null>(null);
 
     const [audioUrl, setAudioUrl] = useState<string>("");
+    const [isMaximized, setIsMaximized] = useState(false);
+    const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
+    const [darkMode, setDarkMode] = useState(() => window.localStorage.getItem("legenda:dark") !== "0");
+    const [currentJobId, setCurrentJobId] = useState<string>("");
 
     // Busca na lista
     const [query, setQuery] = useState("");
@@ -87,6 +142,7 @@ export default function App() {
 
     const canChooseOutput = !!audio && !busy;
     const canGenerate = !!audio && !!outputPath && !busy;
+    const isCompactLayout = viewportWidth < 1100;
 
     const disabledReason = useMemo(() => {
         if (busy) return "Processando...";
@@ -110,18 +166,21 @@ export default function App() {
         const off1 = window.api.onJobProgress((e) => {
             setStep((e.step as StepKey) ?? "IDLE");
             setMessage(e.message || "");
+            setPreviewMeta({ granularity });
         });
 
         const off2 = window.api.onJobDone((e) => {
             setBusy(false);
+            setCurrentJobId("");
             setStep("DONE");
             setMessage("Concluído.");
-            setPreview(e.preview.map((p) => ({ index: p.index, text: p.text })));
+            setPreview(e.preview.map((p) => ({ index: p.index, startMs: p.startMs, endMs: p.endMs, text: p.text })));
             refreshGenerated(e.generated.id);
         });
 
         const off3 = window.api.onJobError((e) => {
             setBusy(false);
+            setCurrentJobId("");
             setStep("ERROR");
             setMessage(e.error.message || "Erro.");
         });
@@ -136,6 +195,16 @@ export default function App() {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        const onResize = () => setViewportWidth(window.innerWidth);
+        window.addEventListener("resize", onResize);
+        return () => window.removeEventListener("resize", onResize);
+    }, []);
+
+    useEffect(() => {
+        window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
+    }, [darkMode]);
 
     useEffect(() => {
         if (!menu) return;
@@ -186,20 +255,24 @@ export default function App() {
     }
 
     async function chooseOutput() {
-        if (!audio) return;
+        if (!audio) return null;
         const suggestedBaseName = baseNameFromFile(audio.name);
         const res = await window.api.chooseOutputPath({ suggestedBaseName, format });
-        if (!res.ok) return;
+        if (!res.ok) return null;
         setOutputPath(res.path);
+        return res.path;
     }
 
     async function start() {
         if (!audio) return;
 
-        // UX: se o usuário clicar gerar sem outputPath, abre o dialog ao invés de só desabilitar
-        if (!outputPath) {
-            await chooseOutput();
-            return;
+        let finalOutputPath = outputPath;
+
+        // UX: ao clicar gerar sem outputPath, escolhe destino e já inicia automaticamente
+        if (!finalOutputPath) {
+            const chosen = await chooseOutput();
+            if (!chosen) return;
+            finalOutputPath = chosen;
         }
 
         setBusy(true);
@@ -207,14 +280,16 @@ export default function App() {
         setStep("PREPARING");
         setMessage("Iniciando...");
 
-        await window.api.startJob({
+        const started = await window.api.startJob({
             audioPath: audio.path,
-            outputPath,
+            outputPath: finalOutputPath,
             language,
             modelId,
             format,
-            granularity
+            granularity,
+            assKaraoke
         });
+        setCurrentJobId(started.jobId);
     }
 
     // Ações por item
@@ -300,15 +375,89 @@ export default function App() {
         return idx;
     }, [step]);
 
-    return (
-        <div style={styles.page}>
-            <h1 style={{ margin: "4px 0 14px" }}>Legenda (MVP)</h1>
+    async function handleMinimizeWindow() {
+        await window.api.windowMinimize();
+    }
 
-            <div style={styles.grid2}>
+    async function handleToggleMaximizeWindow() {
+        const res = await window.api.windowMaximizeToggle();
+        if (res?.ok) setIsMaximized(res.maximized);
+    }
+
+    async function handleCloseWindow() {
+        await window.api.windowClose();
+    }
+
+    async function cancelCurrentJob() {
+        if (!currentJobId) return;
+        await window.api.cancelJob({ jobId: currentJobId });
+        setBusy(false);
+        setCurrentJobId("");
+        setStep("IDLE");
+        setMessage("Processamento cancelado pelo usuário.");
+    }
+
+    function msToClock(ms: number) {
+        const total = Math.max(0, Math.floor(ms / 1000));
+        const h = Math.floor(total / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        return h > 0 ? `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}` : `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    }
+
+    async function copyPreviewLine(line: string) {
+        await navigator.clipboard.writeText(line);
+    }
+
+    async function copyPreviewAll() {
+        const lines = preview.map((p) => `[${msToClock(p.startMs)} - ${msToClock(p.endMs)}] ${p.text}`);
+        await navigator.clipboard.writeText(lines.join("\n"));
+    }
+
+    const progressPercent = useMemo(() => {
+        if (step === "DONE") return 100;
+        if (step === "SAVING") return 95;
+        if (step === "CONVERTING") return 82;
+        if (step === "TRANSCRIBING") return 58;
+        if (step === "PREPARING") return 18;
+        return 0;
+    }, [step]);
+
+    return (
+        <div style={styles.page} data-theme={darkMode ? "dark" : "light"}>
+            <header className="window-topbar">
+                <div className="window-brand">
+                    <span className="window-dot" />
+                    <strong>Legenda Desktop</strong>
+                    <span className="window-subtitle">Transcrição profissional</span>
+                </div>
+
+                <div className="window-controls no-drag">
+                    <button className="theme-toggle-btn" onClick={() => setDarkMode((v) => !v)} title="Alternar tema" aria-label="Alternar tema">
+                        {darkMode ? "☀️" : "🌙"}
+                    </button>
+                    <button className="window-control-btn" onClick={handleMinimizeWindow} title="Minimizar" aria-label="Minimizar">
+                        —
+                    </button>
+                    <button className="window-control-btn" onClick={handleToggleMaximizeWindow} title="Maximizar" aria-label="Maximizar">
+                        {isMaximized ? "❐" : "□"}
+                    </button>
+                    <button className="window-control-btn close" onClick={handleCloseWindow} title="Fechar" aria-label="Fechar">
+                        ✕
+                    </button>
+                </div>
+            </header>
+
+            <main style={styles.contentWrap}>
+                <h1 style={styles.h1}>Legenda Desktop</h1>
+                <p style={styles.subheading}>Gere legendas com qualidade e fluxo otimizado em poucos cliques.</p>
+
+                <div style={styles.grid2}>
                 {/* Configuração */}
-                <div style={styles.card}>
+                <div style={styles.card} className="app-card">
                     <h2 style={styles.h2}>Configuração</h2>
 
+                    <fieldset style={styles.fieldset} disabled={busy}>
                     <section style={styles.section}>
                         <div style={styles.label}>Arquivo de áudio</div>
                         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -361,6 +510,22 @@ export default function App() {
                                 </div>
                             </div>
 
+
+                            {format === "ass" && (
+                                <div>
+                                    <div style={styles.mini}>Estilo ASS</div>
+                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, color: "#444" }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={assKaraoke}
+                                            onChange={(e) => setAssKaraoke(e.target.checked)}
+                                            disabled={busy}
+                                        />
+                                        Aplicar estilo karaokê (realce progressivo por palavra)
+                                    </label>
+                                </div>
+                            )}
+
                             {audio && audioUrl && (
                                 <div>
                                     {/* <label className="text-sm opacity-80">Granularidade</label> */}
@@ -369,12 +534,23 @@ export default function App() {
                                         value={granularity}
                                         onChange={(e) => setGranularity(e.target.value as GranularityPreset)}
                                         className="w-full rounded-lg border px-3 py-2"
+                                        disabled={busy}
                                     >
                                         <option value="LOW">Baixa (mais denso)</option>
                                         <option value="MEDIUM">Média (recomendado)</option>
                                         <option value="HIGH">Alta</option>
                                         <option value="ULTRA">Altíssima (mais picado)</option>
                                     </select>
+
+                                    <div style={{ marginTop: 8, fontSize: 12, color: "#666", lineHeight: 1.35 }}>
+                                        <b>{GRANULARITY_INFO[granularity].title}:</b> {GRANULARITY_INFO[granularity].desc}
+                                    </div>
+
+                                    {/* {preview.length > 0 && isPreviewStale && (
+                                        <div style={{ marginTop: 8, fontSize: 12, color: "#8a1f1f" }}>
+                                            A prévia atual foi gerada com <b>{previewMeta?.granularity}</b>. Gere novamente para refletir <b>{granularity}</b>.
+                                        </div>
+                                    )} */}
                                 </div>
                             )}
 
@@ -387,8 +563,10 @@ export default function App() {
                             </div>
                         </div>
                     </section>
+                    </fieldset>
 
                     <section style={styles.section}>
+                        <div style={{ display: "flex", gap: 8 }}>
                         <button
                             onClick={start}
                             disabled={!audio || busy} // UX: permite clique mesmo sem outputPath (abre dialog)
@@ -397,6 +575,10 @@ export default function App() {
                         >
                             {busy ? "Gerando..." : "Gerar legenda"}
                         </button>
+                        <button onClick={cancelCurrentJob} disabled={!busy || !currentJobId} style={styles.secondaryBtn}>
+                            Cancelar
+                        </button>
+                        </div>
 
                         {!canGenerate && (
                             <div style={{ marginTop: 8, fontSize: 12, color: "#777" }}>
@@ -407,7 +589,7 @@ export default function App() {
                 </div>
 
                 {/* Execução */}
-                <div style={styles.card}>
+                <div style={styles.card} className="app-card">
                     <h2 style={styles.h2}>Execução</h2>
 
                     <section style={styles.section}>
@@ -454,34 +636,40 @@ export default function App() {
                                                 : ""}
                             </div>
 
-                            {busy && (
-                                <div style={{ marginTop: 10, height: 8, background: "#f1f1f1", borderRadius: 999, overflow: "hidden" }}>
-                                    <div style={styles.indeterminateBar} />
-                                </div>
-                            )}
+                            <div style={{ marginTop: 10, height: 10, background: "#e8edf7", borderRadius: 999, overflow: "hidden" }}>
+                                <div style={{ ...styles.progressBar, width: `${progressPercent}%` }} />
+                            </div>
+                            <div style={{ marginTop: 6, fontSize: 12, color: "#64748b" }}>{progressPercent}%</div>
                         </div>
                     </section>
 
                     <section style={styles.section}>
-                        <div style={styles.label}>Prévia</div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <div style={styles.label}>Prévia</div>
+                            <button onClick={copyPreviewAll} disabled={preview.length === 0}>Copiar transcrição completa</button>
+                        </div>
                         {preview.length === 0 ? (
                             <div style={{ color: "#777", fontSize: 13 }}>A prévia aparece ao concluir.</div>
                         ) : (
-                            <ol style={{ margin: "8px 0 0 18px" }}>
+                            <div style={{ marginTop: 8, maxHeight: 260, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
                                 {preview.map((p) => (
-                                    <li key={p.index} style={{ marginBottom: 6 }}>
-                                        {p.text}
-                                    </li>
+                                    <div key={p.index} style={{ padding: 10, borderBottom: "1px solid #eef2f7", display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "150px 1fr auto", gap: 8, alignItems: "start" }}>
+                                        <div style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
+                                            {msToClock(p.startMs)} → {msToClock(p.endMs)}
+                                        </div>
+                                        <div style={{ fontSize: 13, lineHeight: 1.4 }}>{p.text}</div>
+                                        <button onClick={() => copyPreviewLine(p.text)} style={{ justifySelf: isCompactLayout ? "start" : "end" }}>Copiar trecho</button>
+                                    </div>
                                 ))}
-                            </ol>
+                            </div>
                         )}
                     </section>
                 </div>
             </div>
 
             {/* Arquivos gerados */}
-            <div style={{ ...styles.card, marginTop: 14 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+            <div style={{ ...styles.card, marginTop: 14 }} className="app-card">
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <h2 style={styles.h2}>Arquivos gerados</h2>
 
                     <input
@@ -492,7 +680,7 @@ export default function App() {
                             padding: "8px 10px",
                             borderRadius: 10,
                             border: "1px solid #ddd",
-                            width: 280
+                            width: "min(320px, 100%)"
                         }}
                     />
                 </div>
@@ -506,9 +694,9 @@ export default function App() {
                         Nenhum resultado para “{query}”.
                     </div>
                 ) : (
-                    <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 12, marginTop: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: isCompactLayout ? "1fr" : "minmax(280px, 420px) minmax(0, 1fr)", gap: 12, marginTop: 12 }}>
                         {/* Lista */}
-                        <div style={{ borderRight: "1px solid #eee", paddingRight: 12, maxHeight: 320, overflow: "auto" }}>
+                        <div style={{ borderRight: isCompactLayout ? "none" : "1px solid #eee", paddingRight: isCompactLayout ? 0 : 12, maxHeight: 320, overflow: "auto", minWidth: 0 }}>
                             {filtered.map((g) => (
                                 <div
                                     key={g.id}
@@ -560,7 +748,7 @@ export default function App() {
                         </div>
 
                         {/* Detalhe */}
-                        <div>
+                        <div style={{ minWidth: 0 }}>
                             {!selected ? (
                                 <div style={{ color: "#777", fontSize: 13 }}>Selecione um item para ver detalhes.</div>
                             ) : (
@@ -677,9 +865,9 @@ export default function App() {
             )}
 
             {/* Modal Renomear */}
-            {renameOpen && selected && (
-                <div style={styles.modalBackdrop} onMouseDown={() => setRenameOpen(false)}>
-                    <div style={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
+                {renameOpen && selected && (
+                    <div style={styles.modalBackdrop} onMouseDown={() => setRenameOpen(false)}>
+                        <div style={styles.modal} onMouseDown={(e) => e.stopPropagation()}>
                         <h3 style={{ margin: 0 }}>Renomear arquivo</h3>
                         <div style={{ marginTop: 10, color: "#555", fontSize: 13 }}>
                             Nome atual: <b>{selected.fileName}</b>
@@ -708,34 +896,51 @@ export default function App() {
                             </button>
                         </div>
                     </div>
-                </div>
-            )}
+                    </div>
+                )}
+            </main>
         </div>
     );
 }
 
 const styles: Record<string, React.CSSProperties> = {
     page: {
-        fontFamily: "system-ui, Arial",
-        padding: 18,
-        maxWidth: 1200,
-        margin: "0 auto"
+        fontFamily: "Inter, system-ui, Arial",
+        padding: 0,
+        width: "100%",
+        minHeight: "100vh",
+        overflow: "hidden"
     },
+    contentWrap: {
+        background: "#f8fafc",
+        borderRadius: "0 0 14px 14px",
+        border: "1px solid rgba(226,232,240,0.8)",
+        borderTop: "none",
+        padding: 18,
+        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.26)",
+        minHeight: "calc(100vh - 48px)",
+        overflowY: "auto",
+        overflowX: "hidden"
+    },
+    h1: { margin: 0, fontSize: 26, letterSpacing: -0.3, color: "#0f172a" },
+    subheading: { margin: "8px 0 16px", fontSize: 13, color: "#475569" },
     grid2: {
         display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        gap: 14
+        gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+        gap: 16,
+        alignItems: "start"
     },
     card: {
-        border: "1px solid #e6e6e6",
+        border: "1px solid #d9e2f2",
         borderRadius: 14,
-        padding: 14,
-        background: "#fff"
+        padding: 16,
+        background: "#fff",
+        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.06)"
     },
-    h2: { margin: 0, fontSize: 16 },
+    h2: { margin: 0, fontSize: 16, color: "#0f172a" },
     section: { marginTop: 12 },
-    label: { fontWeight: 800, marginBottom: 6 },
-    mini: { fontSize: 12, color: "#666", marginBottom: 6 },
+    label: { fontWeight: 800, marginBottom: 6, color: "#1e293b" },
+    mini: { fontSize: 12, color: "#64748b", marginBottom: 6 },
     gridOptions: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 },
     pillOn: {
         padding: "7px 10px",
@@ -753,22 +958,24 @@ const styles: Record<string, React.CSSProperties> = {
     },
     primaryBtn: {
         width: "100%",
-        padding: "10px 12px",
+        padding: "11px 12px",
         borderRadius: 10,
-        border: "1px solid #ddd",
+        border: "1px solid #0f3fb1",
+        background: "linear-gradient(90deg, #2563eb 0%, #1d4ed8 100%)",
+        color: "#fff",
+        fontWeight: 700,
         cursor: "pointer"
     },
-    indeterminateBar: {
-        width: "35%",
+    progressBar: {
         height: "100%",
-        background: "#d9d9d9",
+        background: "linear-gradient(90deg, #22c55e 0%, #16a34a 100%)",
         borderRadius: 999,
-        animation: "move 1.1s infinite ease-in-out"
+        transition: "width 220ms ease"
     },
     modalBackdrop: {
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.25)",
+        background: "rgba(2,6,23,0.5)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -843,7 +1050,7 @@ const styles: Record<string, React.CSSProperties> = {
     menuPanel: {
         position: "fixed",
         background: "#fff",
-        border: "1px solid #e6e6e6",
+        border: "1px solid #d9e2f2",
         borderRadius: 12,
         padding: 6,
         boxShadow: "0 12px 30px rgba(0,0,0,0.08)"
@@ -852,7 +1059,7 @@ const styles: Record<string, React.CSSProperties> = {
     flowRow: {
         display: "flex",
         alignItems: "center",
-        gap: 10,
+        gap: 5,
         flexWrap: "nowrap",
         overflowX: "auto",
         overflowY: "hidden",
@@ -860,7 +1067,7 @@ const styles: Record<string, React.CSSProperties> = {
         WebkitOverflowScrolling: "touch"
     },
     flowNode: {
-        padding: "8px 12px",
+        padding: "8px",
         borderRadius: 999,
         border: "1px solid #e6e6e6",
         fontSize: 12,
@@ -877,4 +1084,77 @@ const styles: Record<string, React.CSSProperties> = {
         flex: "0 0 auto"
     },
     flowHint: { marginTop: 8, fontSize: 12, color: "#777" },
+    previewWrap: {
+        position: "relative",
+        border: "1px solid #eee",
+        borderRadius: 12,
+        padding: "4px 12px 12px 12px",
+        background: "#fff",
+        maxHeight: 290,
+        overflow: "auto",
+    },
+
+    copyBlockBtn: {
+        position: "sticky", // fica “no topo” durante scroll do preview
+        top: 0,
+        float: "right", // garante canto superior direito dentro do wrap
+        zIndex: 5,
+        width: 28,
+        height: 28,
+        borderRadius: 10,
+        border: "1px solid #e6e6e655",
+        background: "#fff",
+        cursor: "pointer",
+        display: "grid",
+        placeItems: "center",
+        color: "#444",
+    },
+
+    previewList: {
+        marginTop: 34,
+    },
+
+    previewRow: {
+        position: "relative",
+        padding: "10px 10px",
+        borderRadius: 10,
+        border: "1px solid #f0f0f0EE",
+        marginBottom: 10,
+        background: "#fff",
+    },
+
+    previewRowHeader: {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+    },
+
+    previewTime: {
+        fontSize: 12,
+        color: "#666",
+        fontStyle: "italic",
+        fontWeight: 800,
+    },
+
+    copyLineBtn: {
+        width: 30,
+        height: 30,
+        borderRadius: 10,
+        border: "1px solid #e6e6e655",
+        background: "#fff",
+        cursor: "pointer",
+        display: "grid",
+        placeItems: "center",
+        color: "#444",
+        transition: "opacity 120ms ease",
+    },
+
+    previewText: {
+        marginTop: 0,
+        fontSize: 13,
+        color: "#222",
+        lineHeight: 1,
+        whiteSpace: "normal",
+    },
 };
