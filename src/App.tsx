@@ -147,6 +147,23 @@ export default function App() {
     }, [activeAudio]);
 
     useEffect(() => {
+        window.localStorage.setItem("legenda:dark", darkMode ? "1" : "0");
+        window.api.setTheme(darkMode ? "dark" : "light");
+    }, [darkMode]);
+
+    useEffect(() => {
+        if (!activeAudio) {
+            setAudioUrl("");
+            return;
+        }
+
+        window.api.getFileUrl(activeAudio.path).then((u) => {
+            if (u.ok) setAudioUrl(u.url);
+            else setAudioUrl("");
+        });
+    }, [activeAudio]);
+
+    useEffect(() => {
         if (!menu) return;
 
         const close = () => setMenu(null);
